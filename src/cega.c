@@ -148,13 +148,13 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
 
   /* Adding to the database */
   success = add_to_db(username, pwd, pbk);
+  jv_free(parsed_response);
 
 BAIL_OUT:
   D("User %s%s found\n", username, (success)?"":" not");
   if(cres) free(cres);
   if(endpoint_creds) free(endpoint_creds);
 
-  jv_free(parsed_response);
   jq_teardown(&jq);
 
   curl_easy_cleanup(curl);
