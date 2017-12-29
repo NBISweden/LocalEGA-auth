@@ -39,6 +39,7 @@ void
 create_homedir(struct passwd *pw){
 
   struct stat st;
+  D("Create homedir: %s\n", pw->pw_dir);
 
   /* If we find something, we assume it's correct and return */
   if (stat(pw->pw_dir, &st) == 0){
@@ -58,7 +59,8 @@ create_homedir(struct passwd *pw){
   }
 
   if (chown(pw->pw_dir, 0, pw->pw_gid) != 0){
-    SYSLOG("unable to change permissions: %s", pw->pw_dir);
+    SYSLOG("unable to change ownership on %s", pw->pw_dir);
+    D("unable to change owernship to root:%d\n", pw->pw_gid);
     return;
   }
 

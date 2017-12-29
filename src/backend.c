@@ -227,6 +227,7 @@ backend_get_userentry(const char *username,
   /* User retrieved from Central EGA, try again the DB */
   status = get_from_db(username, result, buffer, buflen, errnop);
   if (status == NSS_STATUS_SUCCESS){
+    D("Time to create the homedir of %s\n", username);
     create_homedir(result); /* In that case, create the homedir */
     return status;
   }
