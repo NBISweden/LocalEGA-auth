@@ -197,6 +197,7 @@ add_to_db(const char* username, const char* pwdh, const char* pubkey)
 
 /*
  * Get one entry from the Postgres result
+ * or contact CentralEGA and retry.
  */
 enum nss_status
 backend_get_userentry(const char *username,
@@ -205,11 +206,12 @@ backend_get_userentry(const char *username,
 		      int *errnop)
 {
   D("called\n");
+  enum nss_status status = NSS_STATUS_NOTFOUND;
 
   if(!backend_open(0)) return NSS_STATUS_UNAVAIL;
 
-  if( get_from_db(username, result, buffer, buflen, errnop) )
-    return NSS_STATUS_SUCCESS;
+  status = get_from_db(username, result, buffer, buflen, errnop);
+  if (status == NSS_STATUS_SUCCESS) return status;
 
   /* OK, User not found in DB */
 
@@ -223,14 +225,16 @@ backend_get_userentry(const char *username,
     return NSS_STATUS_NOTFOUND;
 
   /* User retrieved from Central EGA, try again the DB */
-  if( get_from_db(username, result, buffer, buflen, errnop) ){
+  status = get_from_db(username, result, buffer, buflen, errnop);
+  if (status == NSS_STATUS_SUCCESS){
     create_homedir(result); /* In that case, create the homedir */
-    return NSS_STATUS_SUCCESS;
+    return status;
   }
 
   /* No luck, user not found */
   return NSS_STATUS_NOTFOUND;
 }
+
 
 bool
 backend_authenticate(const char *username, const char *password)
