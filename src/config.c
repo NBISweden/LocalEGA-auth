@@ -15,22 +15,53 @@ cleanconfig(void)
   if(!options) return;
 
   SYSLOG("Cleaning the config struct");
-  /* if(!options->cfgfile           ) { free(options->cfgfile);        } */
-  if(!options->db_connstr        ) { free((char*)options->db_connstr);     }
-  if(!options->nss_get_user      ) { free((char*)options->nss_get_user);   }
-  if(!options->nss_add_user      ) { free((char*)options->nss_add_user);   }
-  if(!options->pam_auth          ) { free((char*)options->pam_auth);       }
-  if(!options->pam_acct          ) { free((char*)options->pam_acct);       }
-  if(!options->pam_prompt        ) { free((char*)options->pam_prompt);     }
-  if(!options->rest_endpoint     ) { free((char*)options->rest_endpoint);  }
-  if(!options->rest_user         ) { free((char*)options->rest_user);      }
-  if(!options->rest_password     ) { free((char*)options->rest_password);  }
-  if(!options->rest_resp_passwd  ) { free((char*)options->rest_resp_passwd); }
-  if(!options->rest_resp_pubkey  ) { free((char*)options->rest_resp_pubkey); }
-  if(!options->ssl_cert          ) { free((char*)options->ssl_cert);       }
-  if(!options->skel              ) { free((char*)options->skel);           }
+  if(!options->cfgfile          ) { free((char*)options->cfgfile);        }
+  if(options->db_connstr        ) { free((char*)options->db_connstr);     }
+  if(options->get_ent           ) { free((char*)options->get_ent);        }
+  if(options->add_user          ) { free((char*)options->add_user);       }
+  if(options->get_password      ) { free((char*)options->get_password);   }
+  if(options->get_account       ) { free((char*)options->get_account);    }
+  if(options->prompt            ) { free((char*)options->prompt);         }
+  if(options->ega_dir           ) { free((char*)options->ega_dir);        }
+  if(options->cega_endpoint     ) { free((char*)options->cega_endpoint);  }
+  if(options->cega_user         ) { free((char*)options->cega_user);      }
+  if(options->cega_password     ) { free((char*)options->cega_password);  }
+  if(options->cega_resp_passwd  ) { free((char*)options->cega_resp_passwd); }
+  if(options->cega_resp_pubkey  ) { free((char*)options->cega_resp_pubkey); }
+  if(options->ssl_cert          ) { free((char*)options->ssl_cert);       }
   free(options);
   return;
+}
+
+#define INVALID(x) D("Invalid "#x);
+
+bool
+checkoptions(void)
+{
+  bool valid = true;
+  if(!options) {
+    D("No config struct");
+    return false;
+  }
+
+  D("Checking the config struct");
+  if(!options->db_connstr        ) { INVALID("db_connection");    valid = false; }
+  if(!options->get_ent           ) { INVALID("get_ent");          valid = false; }
+  if(!options->add_user          ) { INVALID("add_user");         valid = false; }
+  if(!options->get_password      ) { INVALID("get_password");     valid = false; }
+  if(!options->get_account       ) { INVALID("get_account");      valid = false; }
+  if(!options->prompt            ) { INVALID("prompt");           valid = false; }
+  if(!options->ega_dir           ) { INVALID("ega_dir");          valid = false; }
+  if(!options->ega_dir_attrs     ) { INVALID("ega_dir_attrs");    valid = false; }
+  if(!options->cega_endpoint     ) { INVALID("cega_endpoint");    valid = false; }
+  if(!options->cega_user         ) { INVALID("cega_user");        valid = false; }
+  if(!options->cega_password     ) { INVALID("cega_password");    valid = false; }
+  if(!options->cega_resp_passwd  ) { INVALID("cega_resp_passwd"); valid = false; }
+  if(!options->cega_resp_pubkey  ) { INVALID("cega_resp_pubkey"); valid = false; }
+  /* if(options->ssl_cert          ) { INVALID("ssl_cert");      valid = false; } */
+
+  if(!valid) D("Invalid config struct");
+  return valid;
 }
 
 bool
@@ -42,7 +73,7 @@ readconfig(const char* configfile)
   size_t len = 0;
   char *key,*eq,*val,*end;
 
-  D("called (cfgfile: %s)\n", configfile);
+  D("called (cfgfile: %s)", configfile);
 
   if(options) return true; /* Done already */
 
@@ -60,16 +91,11 @@ readconfig(const char* configfile)
       
   /* Default config values */
   options->cfgfile = configfile;
-  options->with_rest = ENABLE_REST;
+  options->with_rest = ENABLE_CEGA;
   options->rest_buffer_size = BUFFER_REST;
-  options->pam_prompt = PAM_PROMPT;
+  options->prompt = PROMPT;
   options->ssl_cert = CEGA_CERT;
-  options->with_homedir = false;
-  options->skel = "/ega/skel";
 
-  options->rest_resp_passwd = ".password";
-  options->rest_resp_pubkey = ".pubkey";
-      
   /* Parse line by line */
   while (getline(&line, &len, fp) > 0) {
 	
@@ -98,39 +124,36 @@ readconfig(const char* configfile)
 	
     if(!strcmp(key, "debug"             )) { options->debug = true;                 }
     if(!strcmp(key, "db_connection"     )) { options->db_connstr = strdup(val);     }
-    if(!strcmp(key, "nss_get_user"      )) { options->nss_get_user = strdup(val);   }
-    if(!strcmp(key, "nss_add_user"      )) { options->nss_add_user = strdup(val);   }
-    if(!strcmp(key, "pam_auth"          )) { options->pam_auth = strdup(val);       }
-    if(!strcmp(key, "pam_acct"          )) { options->pam_acct = strdup(val);       }
-    if(!strcmp(key, "pam_prompt"        )) { options->pam_prompt = strdup(val);     }
-    if(!strcmp(key, "skel"              )) { options->skel = strdup(val);           }
-    if(!strcmp(key, "rest_endpoint"     )) { options->rest_endpoint = strdup(val);  }
-    if(!strcmp(key, "rest_user"         )) { options->rest_user     = strdup(val);  }
-    if(!strcmp(key, "rest_password"     )) { options->rest_password = strdup(val);  }
-    if(!strcmp(key, "rest_resp_passwd"  )) { options->rest_resp_passwd=strdup(val); }
-    if(!strcmp(key, "rest_resp_pubkey"  )) { options->rest_resp_pubkey=strdup(val); }
-    if(!strcmp(key, "rest_buffer_size"  )) { options->rest_buffer_size = atoi(val); }
+
+    if(!strcmp(key, "get_ent"           )) { options->get_ent = strdup(val);        }
+    if(!strcmp(key, "add_user"          )) { options->add_user = strdup(val);       }
+    if(!strcmp(key, "ega_dir"           )) { options->ega_dir = strdup(val);        }
+    if(!strcmp(key, "ega_dir_attrs"     )) { options->ega_dir_attrs = strtol(val, NULL, 8);  }
+    if(!strcmp(key, "get_password"      )) { options->get_password = strdup(val);   }
+    if(!strcmp(key, "get_account"       )) { options->get_account = strdup(val);    }
+    if(!strcmp(key, "prompt"            )) { options->prompt = strdup(val);         }
+
+    if(!strcmp(key, "cega_endpoint"     )) { options->cega_endpoint = strdup(val);  }
+    if(!strcmp(key, "cega_user"         )) { options->cega_user     = strdup(val);  }
+    if(!strcmp(key, "cega_password"     )) { options->cega_password = strdup(val);  }
+    if(!strcmp(key, "cega_resp_passwd"  )) { options->cega_resp_passwd=strdup(val); }
+    if(!strcmp(key, "cega_resp_pubkey"  )) { options->cega_resp_pubkey=strdup(val); }
+    if(!strcmp(key, "rest_buffer_size"  )) { options->rest_buffer_size=strtol(val, NULL, 10); }
     if(!strcmp(key, "ssl_cert"          )) { options->ssl_cert = strdup(val);       }
-    if(!strcmp(key, "enable_rest")) {
+
+    if(!strcmp(key, "enable_cega")) {
       if(!strcmp(val, "yes") || !strcmp(val, "true")){
 	options->with_rest = true;
       } else {
-	SYSLOG("Could not parse the enable_rest: Using %s instead.", ((options->with_rest)?"yes":"no"));
+	SYSLOG("Could not parse the enable_cega: Using %s instead.", ((options->with_rest)?"yes":"no"));
       }
-    }
-    if(!strcmp(key, "with_homedir")) {
-      if(!strcmp(val, "yes") || !strcmp(val, "true")){
-	options->with_homedir = true;
-      } else {
-	SYSLOG("Could not parse the with_homedir: Using %s instead.", ((options->with_homedir)?"yes":"no"));
-      }
-    }
-	
+    }	
   }
 
   fclose(fp);
   if (line) { free(line); }
 
-  D("options: %p\n", options);
+  D("options: %p", options);
+  if(options->debug) return checkoptions();
   return true;
 }

@@ -27,9 +27,9 @@ static PGconn* conn;
 bool
 backend_open(int stayopen)
 {
-  D("called with args: stayopen: %d\n", stayopen);
+  D("called with args: stayopen: %d", stayopen);
   if(!readconfig(CFGFILE)){
-    D("Can't read config\n");
+    D("Can't read config");
     return false;
   }
   if(!conn){
@@ -42,7 +42,7 @@ backend_open(int stayopen)
     backend_close(); /* reentrant */
     return false;
   }
-  D("DB Connection: %p\n", conn);
+  D("DB Connection: %p", conn);
 
   return true;
 }
@@ -52,7 +52,7 @@ backend_open(int stayopen)
 void
 backend_close(void)
 { 
-  D("called\n");
+  D("called");
   if (conn) PQfinish(conn);
   conn = NULL;
 }
@@ -75,7 +75,7 @@ _res2pwd(PGresult *res, int row, int col,
 
   if(*buflen < slen+1) {
     *errnop = ERANGE;
-    D("**************** try again\n");
+    D("**************** try again");
     return NSS_STATUS_TRYAGAIN;
   }
   strncpy(*buf, s, slen);
@@ -99,8 +99,8 @@ get_from_db(const char* username, struct passwd *result, char **buffer, size_t *
   const char* params[1] = { username };
   PGresult *res;
 
-  D("Prepared Statement: %s with %s\n", options->nss_get_user, username);
-  res = PQexecParams(conn, options->nss_get_user, 1, NULL, params, NULL, NULL, 0);
+  D("Prepared Statement: %s with %s", options->get_ent, username);
+  res = PQexecParams(conn, options->get_ent, 1, NULL, params, NULL, NULL, 0);
 
   /* Check answer */
   if(PQresultStatus(res) != PGRES_TUPLES_OK || !PQntuples(res)) goto BAIL_OUT;
@@ -143,7 +143,7 @@ session_refresh_user(const char* username)
 
   if(!backend_open(0)) return PAM_SESSION_ERR;
 
-  D("Refreshing user %s\n", username);
+  D("Refreshing user %s", username);
   res = PQexecParams(conn, "SELECT refresh_user($1)", 1, NULL, params, NULL, NULL, 0);
 
   status = (PQresultStatus(res) != PGRES_TUPLES_OK)?PAM_SUCCESS:PAM_SESSION_ERR;
@@ -165,8 +165,8 @@ account_valid(const char* username)
 
   if(!backend_open(0)) return PAM_PERM_DENIED;
 
-  D("Prepared Statement: %s with %s\n", options->pam_acct, username);
-  res = PQexecParams(conn, options->pam_acct, 1, NULL, params, NULL, NULL, 0);
+  D("Prepared Statement: %s with %s", options->get_account, username);
+  res = PQexecParams(conn, options->get_account, 1, NULL, params, NULL, NULL, 0);
 
   /* Check answer */
   status = (PQresultStatus(res) == PGRES_TUPLES_OK)?PAM_SUCCESS:PAM_ACCT_EXPIRED;
@@ -184,12 +184,12 @@ add_to_db(const char* username, const char* pwdh, const char* pubkey)
   PGresult *res;
   bool success;
 
-  D("Prepared Statement: %s\n", options->nss_add_user);
-  D("with VALUES('%s','%s','%s')\n", username, pwdh, pubkey);
-  res = PQexecParams(conn, options->nss_add_user, 3, NULL, params, NULL, NULL, 0);
+  D("Prepared Statement: %s", options->add_user);
+  D("with VALUES('%s','%s','%s')", username, pwdh, pubkey);
+  res = PQexecParams(conn, options->add_user, 3, NULL, params, NULL, NULL, 0);
 
   success = (PQresultStatus(res) == PGRES_TUPLES_OK);
-  if(!success) D("%s\n", PQerrorMessage(conn));
+  if(!success) D("%s", PQerrorMessage(conn));
   PQclear(res);
   return success;
 }
@@ -205,7 +205,7 @@ backend_get_userentry(const char *username,
 		      char **buffer, size_t *buflen,
 		      int *errnop)
 {
-  D("called\n");
+  D("called");
   enum nss_status status = NSS_STATUS_NOTFOUND;
 
   if(!backend_open(0)) return NSS_STATUS_UNAVAIL;
@@ -217,7 +217,7 @@ backend_get_userentry(const char *username,
 
   /* if REST disabled */
   if(!options->with_rest){
-    D("Contacting cega for user %s is disabled\n", username);
+    D("Contacting cega for user %s is disabled", username);
     return NSS_STATUS_NOTFOUND;
   }
     
@@ -227,7 +227,7 @@ backend_get_userentry(const char *username,
   /* User retrieved from Central EGA, try again the DB */
   status = get_from_db(username, result, buffer, buflen, errnop);
   if (status == NSS_STATUS_SUCCESS){
-    create_homedir(result); /* In that case, create the homedir */
+    create_ega_dir(options->ega_dir, username, result->pw_uid, result->pw_gid, options->ega_dir_attrs); /* In that case, create the homedir */
     return status;
   }
 
@@ -246,8 +246,8 @@ backend_authenticate(const char *username, const char *password)
 
   if(!backend_open(0)) return false;
 
-  D("Prepared Statement: %s with %s\n", options->pam_auth, username);
-  res = PQexecParams(conn, options->pam_auth, 1, NULL, params, NULL, NULL, 0);
+  D("Prepared Statement: %s with %s", options->get_password, username);
+  res = PQexecParams(conn, options->get_password, 1, NULL, params, NULL, NULL, 0);
 
   /* Check answer */
   if(PQresultStatus(res) != PGRES_TUPLES_OK || !PQntuples(res)) goto BAIL_OUT;
@@ -256,16 +256,16 @@ backend_authenticate(const char *username, const char *password)
   pwdh = strdup(PQgetvalue(res, 0, 0)); /* row 0, col 0 */
 
   if(!strncmp(pwdh, "$2", 2)){
-    D("Using Blowfish\n");
+    D("Using Blowfish");
     char pwdh_computed[64];
     if( crypt_rn(password, pwdh, pwdh_computed, 64) == NULL){
-      D("bcrypt failed\n");
+      D("bcrypt failed");
       goto BAIL_OUT;
     }
     if(!strcmp(pwdh, (char*)&pwdh_computed[0]))
       status = true;
   } else {
-    D("Using libc: supporting MD5, SHA256, SHA512\n")
+    D("Using libc: supporting MD5, SHA256, SHA512");
     if (!strcmp(pwdh, crypt(password, pwdh)))
       status = true;
   }

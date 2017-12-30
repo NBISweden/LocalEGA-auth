@@ -30,7 +30,7 @@ curl_callback (void *contents, size_t size, size_t nmemb, void *p) {
 
   /* check buffer */
   if (cres->body == NULL) {
-    D("ERROR: Failed to expand buffer in curl_callback\n");
+    D("ERROR: Failed to expand buffer in curl_callback");
     /* free(p); */
     return -1;
   }
@@ -48,7 +48,7 @@ get_from_json(jq_state *jq, const char* query, jv json){
   
   const char* res = NULL;
 
-  D("Processing query: %s\n", query);
+  D("Processing query: %s", query);
 
   if (!jq_compile(jq, query)){ D("Invalid query"); return NULL; }
 
@@ -58,10 +58,10 @@ get_from_json(jq_state *jq, const char* query, jv json){
 
     if (jv_get_kind(result) == JV_KIND_STRING) {
       res = jv_string_value(result);
-      D("Valid result: %s\n", res);
+      D("Valid result: %s", res);
       jv_free(result);
     } else {
-      D("Valid result but not a string\n");
+      D("Valid result but not a string");
       //jv_dump(result, 0);
       jv_free(result);
     }
@@ -83,20 +83,20 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
   const char *pwd = NULL;
   const char *pbk = NULL;
 
-  D("Contacting cega for user: %s\n", username);
+  D("Contacting cega for user: %s", username);
 
-  if(!options->rest_user || !options->rest_password){
-    D("Empty CEGA credentials\n");
+  if(!options->cega_user || !options->cega_password){
+    D("Empty CEGA credentials");
     return false; /* early quit */
   }
 
   curl_global_init(CURL_GLOBAL_DEFAULT);
   curl = curl_easy_init();
 
-  if(!curl) { D("libcurl init failed\n"); goto BAIL_OUT; }
+  if(!curl) { D("libcurl init failed"); goto BAIL_OUT; }
 
-  if( !sprintf(endpoint, options->rest_endpoint, username )){
-    D("Endpoint URL looks weird for user %s: %s\n", username, options->rest_endpoint);
+  if( !sprintf(endpoint, options->cega_endpoint, username )){
+    D("Endpoint URL looks weird for user %s: %s", username, options->cega_endpoint);
     goto BAIL_OUT;
   }
 
@@ -109,9 +109,9 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
   curl_easy_setopt(curl, CURLOPT_FAILONERROR   , 1L               ); /* when not 200 */
 
   curl_easy_setopt(curl, CURLOPT_HTTPAUTH      , CURLAUTH_BASIC);
-  endpoint_creds = (char*)malloc(1 + strlen(options->rest_user) + strlen(options->rest_password));
-  sprintf(endpoint_creds, "%s:%s", options->rest_user, options->rest_password);
-  D("CEGA credentials: %s\n", endpoint_creds);
+  endpoint_creds = (char*)malloc(1 + strlen(options->cega_user) + strlen(options->cega_password));
+  sprintf(endpoint_creds, "%s:%s", options->cega_user, options->cega_password);
+  D("CEGA credentials: %s", endpoint_creds);
   curl_easy_setopt(curl, CURLOPT_USERPWD       , endpoint_creds);
  
   /* curl_easy_setopt(curl, CURLOPT_SSLCERT      , options->ssl_cert); */
@@ -123,19 +123,19 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
 #endif
 
   /* Perform the request, res will get the return code */
-  D("Connecting to %s\n", endpoint);
+  D("Connecting to %s", endpoint);
   res = curl_easy_perform(curl);
-  D("CEGA Request done\n");
+  D("CEGA Request done");
   if(res != CURLE_OK){
-    D("curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+    D("curl_easy_perform() failed: %s", curl_easy_strerror(res));
     goto BAIL_OUT;
   }
 
-  D("Parsing the JSON response\n");
+  D("Parsing the JSON response");
   parsed_response = jv_parse(cres->body);
 
   if (!jv_is_valid(parsed_response)) {
-    D("Invalid response\n");
+    D("Invalid response");
     goto BAIL_OUT;
   }
 
@@ -143,15 +143,15 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
   jq = jq_init();
   if (jq == NULL) { D("jq error with malloc"); goto BAIL_OUT; }
 
-  pwd = get_from_json(jq, options->rest_resp_passwd, jv_copy(parsed_response));
-  pbk = get_from_json(jq, options->rest_resp_pubkey, jv_copy(parsed_response));
+  pwd = get_from_json(jq, options->cega_resp_passwd, jv_copy(parsed_response));
+  pbk = get_from_json(jq, options->cega_resp_pubkey, jv_copy(parsed_response));
 
   /* Adding to the database */
   success = add_to_db(username, pwd, pbk);
   jv_free(parsed_response);
 
 BAIL_OUT:
-  D("User %s%s found\n", username, (success)?"":" not");
+  D("User %s%s found", username, (success)?"":" not");
   if(cres) free(cres);
   if(endpoint_creds) free(endpoint_creds);
 

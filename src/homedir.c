@@ -4,84 +4,73 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include <pwd.h>
 #include <unistd.h>
 
 #include "debug.h"
 #include "config.h"
 
-static bool
-make_parent_dirs(const char *dir, int make)
-{
-  int rc = true;
-  struct stat st;
-
-  char *cp = strrchr(dir, '/');
-  
-  if (!cp || cp == dir) return rc;
-  
-  *cp = '\0';
-  if (stat(dir, &st) && errno == ENOENT)
-    rc = make_parent_dirs(dir, 1);
-  *cp = '/';
-  
-  if (rc) return rc;
-  
-  if (make && mkdir(dir, 0755) && errno != EEXIST) {
-    D("unable to create directory %s", dir);
-    return false;
-  }
-  
-  return rc;
+static char*
+_expand_dir(const char* topdir, const char* username){
+  char* d = (char*)malloc(sizeof(char*));
+  if(d) sprintf(d, "%s/%s", topdir, username);
+  return d;
 }
 
-void
-create_homedir(struct passwd *pw){
+bool
+create_ega_dir(const char* topdir, const char* username, uid_t uid, gid_t gid, const long int attrs){
 
   struct stat st;
-  D("Create homedir: %s\n", pw->pw_dir);
+  bool status = false;
+  char* userdir = _expand_dir(topdir,username);
 
-  /* If we find something, we assume it's correct and return */
-  if (stat(pw->pw_dir, &st) == 0){
-    D("homedir already there: %s\n", pw->pw_dir);
-    return;
+  if(!userdir){
+    D("no space for user directory");
+    return false;
   }
 
-  if (!make_parent_dirs(pw->pw_dir, 0)){
-    D("Could not create homedir %s [%s]\n", pw->pw_dir, strerror(errno));
-    return;
+  D("Create EGA dir: %s", userdir);
+
+  /* If we find something, we assume it's correct and return */
+  if (stat(userdir, &st) == 0){
+    D("homedir already there: %s", userdir);
+    goto BAILOUT;
   }
   
   /* Create the new directory */
-  if (mkdir(pw->pw_dir, 0750) && errno != EEXIST){
-    D("unable to create directory %s [%s]\n", pw->pw_dir, strerror(errno));
-    return;
+  if (mkdir(userdir, attrs)){
+    D("unable to mkdir %o %s [%s]", (unsigned int)attrs, userdir, strerror(errno));
+    goto BAILOUT;
   }
 
-  if (chown(pw->pw_dir, 0, pw->pw_gid) != 0){
-    SYSLOG("unable to change ownership on %s", pw->pw_dir);
-    D("unable to change owernship to root:%d [%s]\n", pw->pw_gid, strerror(errno));
-    return;
+  if (chown(userdir, uid, gid)){
+    D("unable to change owernship to %d:%d [%s]", uid, gid, strerror(errno));
+    goto BAILOUT;
   }
 
-  /* See if we need to copy the skel dir over. */
-  /* cp options->skel into homedir */
-  /* if (strcmp(dent->d_name,".") == 0 || */
-  /*     strcmp(dent->d_name,"..") == 0) */
-  /*   continue; */
+  status = true;
+  D("homedir created: %s", userdir);
 
-  /* Creating the inbox */
-  char* inboxdir = (char*)malloc(sizeof(char*));
-  if(inboxdir == NULL){ D("no space for inbox directory\n"); return; }
-  sprintf(inboxdir, "%s/inbox", pw->pw_dir);
-  if (mkdir(inboxdir, 0700) && errno != EEXIST){
-    D("unable to create inbox directory %s [%s]\n", inboxdir, strerror(errno));
-  }
-  if (chown(inboxdir, pw->pw_uid, pw->pw_gid) != 0){
-    D("unable to change permissions: %s [%s]\n", inboxdir, strerror(errno));
-  }
-  free(inboxdir);
-  
-  D("homedir created: %s\n", pw->pw_dir);
+BAILOUT:
+  if(userdir)free(userdir);
+  return status;
+}
+
+void
+remove_ega_dir(const char* topdir, const char* username){
+
+  int err;
+
+  char* userdir = _expand_dir(topdir,username);
+
+  if(!userdir){ D("no space for user directory"); return; }
+    
+  D("Attempting to remove EGA dir: %s", userdir);
+
+  err = rmdir(userdir);
+
+  D("EGA dir %s %sremoved", userdir, (err)?"not ":"");
+  if(err) D("Reason: %s", strerror(errno));
+
+  free(userdir);
   return;
 }

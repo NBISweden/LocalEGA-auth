@@ -19,15 +19,14 @@
                           closelog();                               \
                       } while(0);
 
-#define D(x...)
+#define D(...)
 
 
 #ifdef DEBUG
 #include <stdio.h>
 #undef D
-#define D(x...) do { fprintf(stderr, "EGA %-10s | %4d | %22s | ", __FILE__, __LINE__, __FUNCTION__); \
-	             fprintf(stderr, ##x);                                                           \
-                } while(0);
+#define D(fmt, ...) fprintf(stderr, "EGA %-10s | %4d | %22s | "fmt"\n", __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
+
 #endif /* !DEBUG */
 
 #endif /* !__LEGA_DEBUG_H_INCLUDED__ */

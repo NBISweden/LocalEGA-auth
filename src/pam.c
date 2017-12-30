@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <pwd.h>
 
 #define PAM_SM_AUTH
 #define PAM_SM_ACCT
@@ -9,6 +10,7 @@
 #include <security/pam_appl.h>
 #include <security/pam_modules.h>
 #include <security/pam_ext.h>
+#include <security/pam_modutil.h>
 
 #include "debug.h"
 #include "config.h"
@@ -65,15 +67,15 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   char* config_file = NULL;
   int mflags = 0;
   
-  D("called\n");
+  D("called");
 
   user = NULL; password = NULL; rhost = NULL;
 
   rc = pam_get_user(pamh, &user, NULL);
-  if (rc != PAM_SUCCESS) { D("Can't get user: %s\n", pam_strerror(pamh, rc)); return rc; }
+  if (rc != PAM_SUCCESS) { D("Can't get user: %s", pam_strerror(pamh, rc)); return rc; }
   
   rc = pam_get_item(pamh, PAM_RHOST, &item);
-  if ( rc != PAM_SUCCESS) { SYSLOG("EGA: Unknown rhost: %s\n", pam_strerror(pamh, rc)); }
+  if ( rc != PAM_SUCCESS) { SYSLOG("EGA: Unknown rhost: %s", pam_strerror(pamh, rc)); }
 
   rhost = (char*)item;
   if(rhost){ /* readconfig first, if using DBGLOG */
@@ -100,15 +102,15 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   pam_options(&mflags, &config_file, argc, argv);
   if(!readconfig(config_file)){
-    D("Can't read config\n");
+    D("Can't read config");
     return PAM_AUTH_ERR;
   }
 
-  D("Asking %s for password\n", user);
+  D("Asking %s for password", user);
 
   /* Get the password then */
   msg.msg_style = (mflags & PAM_OPT_ECHO_PASS)?PAM_PROMPT_ECHO_ON:PAM_PROMPT_ECHO_OFF;
-  msg.msg = options->pam_prompt;
+  msg.msg = options->prompt;
   msgs[0] = &msg;
 
   rc = pam_get_item(pamh, PAM_CONV, &item);
@@ -135,7 +137,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   free(resp[0].resp);
   free(resp);
 
-  D("get it again after conversation\n");
+  D("get it again after conversation");
 
   rc = pam_get_item(pamh, PAM_AUTHTOK, &item);
   password = (char*)item;
@@ -144,7 +146,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
     return rc;
   }
 
-  D("allowing empty passwords?\n");
+  D("allowing empty passwords?");
   /* Check if empty password are disallowed */
   if ((!password || !*password) && (flags & PAM_DISALLOW_NULL_AUTHTOK)) { return PAM_AUTH_ERR; }
   
@@ -178,15 +180,15 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
   int mflags = 0;
   int rc = pam_get_user(pamh, &user, NULL);
 
-  D("called\n");
+  D("called");
   if ( rc != PAM_SUCCESS) {
-    SYSLOG("EGA: Unknown user: %s\n", pam_strerror(pamh, rc));
+    SYSLOG("EGA: Unknown user: %s", pam_strerror(pamh, rc));
     return rc;
   }
 
   pam_options(&mflags, &config_file, argc, argv);
   if(!readconfig(config_file)){
-    D("Can't read config\n");
+    D("Can't read config");
     return PAM_PERM_DENIED;
   }
 
@@ -204,26 +206,54 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   char* config_file = NULL;
   int mflags = 0;
 
-  D("called\n");
-
   rc = pam_get_user(pamh, &user, NULL);
-  if ( rc != PAM_SUCCESS) { SYSLOG("EGA: Unknown user: %s\n", pam_strerror(pamh, rc)); return rc; }
+  if ( rc != PAM_SUCCESS) { SYSLOG("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
   pam_options(&mflags, &config_file, argc, argv);
   if(!readconfig(config_file)){
-    D("Can't read config\n");
+    D("Can't read config");
     return PAM_SESSION_ERR;
   }
 
   session_refresh_user(user); /* ignore result */
 
-  DBGLOG("Opening Session for user: %s", user);
+  DBGLOG("Mounting LegaFS for user: %s", user);
+
+  /* mount() */
+
   return PAM_SUCCESS;
 }
 
 PAM_EXTERN int
 pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
-  D("called\n");
-  return PAM_SUCCESS;
+  const char *user;
+  int rc;
+  const struct passwd *pwd;
+
+  rc = pam_get_user(pamh, &user, NULL);
+  if ( rc != PAM_SUCCESS) { SYSLOG("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+
+  D("unmount LegaFS for %s (if not busy)", user);
+
+  /* Get the password entry */
+  pwd = pam_modutil_getpwnam (pamh, user);
+  if (pwd == NULL){
+    pam_syslog(pamh, LOG_NOTICE, "User unknown.");
+    D("couldn't identify user %s", user);
+    return PAM_CRED_INSUFFICIENT;
+  }
+ 
+  /* /\* Stat the home directory, if something exists then we assume it is */
+  /*    correct and return a success *\/ */
+  /* if (stat(pwd->pw_dir, &St) == 0) { */
+  /*   pam_syslog(pamh, LOG_DEBUG, "Home directory %s already exists.", */
+  /*              pwd->pw_dir); */
+  /* } */
+  /* return PAM_SUCCESS; */
+
+  
+  /* return PAM_SUCCESS; */
+
+  return rc;
 }

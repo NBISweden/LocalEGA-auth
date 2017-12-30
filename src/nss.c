@@ -13,7 +13,7 @@ _nss_ega_setpwent (int stayopen)
 {
   enum nss_status status = NSS_STATUS_UNAVAIL;
 
-  D("called with args (stayopen: %d)\n", stayopen);
+  D("called with args (stayopen: %d)", stayopen);
   
   if(backend_open(stayopen)) {
     status = NSS_STATUS_SUCCESS;
@@ -26,7 +26,7 @@ _nss_ega_setpwent (int stayopen)
 enum nss_status
 _nss_ega_endpwent(void)
 {
-  D("called\n");
+  D("called");
   backend_close();
   return NSS_STATUS_SUCCESS;
 }
@@ -37,7 +37,7 @@ _nss_ega_getpwent_r(struct passwd *result,
 		    char *buffer, size_t buflen,
 		    int *errnop)
 {
-  D("called\n");
+  D("called");
   return NSS_STATUS_UNAVAIL;
 }
 
@@ -51,7 +51,7 @@ _nss_ega_getpwnam_r(const char *username,
   /* bail out if we're looking for the root user */
   if( !strcmp(username, "root") ) return NSS_STATUS_NOTFOUND;
   if( !strcmp(username, "ega") ) return NSS_STATUS_NOTFOUND;
-  D("called with args: username: %s\n", username);
+  D("called with args: username: %s", username);
   return backend_get_userentry(username, result, &buffer, &buflen, errnop);
 }
 
