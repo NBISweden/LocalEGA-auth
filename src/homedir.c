@@ -48,19 +48,19 @@ create_homedir(struct passwd *pw){
   }
 
   if (!make_parent_dirs(pw->pw_dir, 0)){
-    D("Could not create homedir %s\n", pw->pw_dir);
+    D("Could not create homedir %s [%s]\n", pw->pw_dir, strerror(errno));
     return;
   }
   
   /* Create the new directory */
   if (mkdir(pw->pw_dir, 0750) && errno != EEXIST){
-    D("unable to create directory %s\n", pw->pw_dir);
+    D("unable to create directory %s [%s]\n", pw->pw_dir, strerror(errno));
     return;
   }
 
   if (chown(pw->pw_dir, 0, pw->pw_gid) != 0){
     SYSLOG("unable to change ownership on %s", pw->pw_dir);
-    D("unable to change owernship to root:%d\n", pw->pw_gid);
+    D("unable to change owernship to root:%d [%s]\n", pw->pw_gid, strerror(errno));
     return;
   }
 
@@ -72,13 +72,13 @@ create_homedir(struct passwd *pw){
 
   /* Creating the inbox */
   char* inboxdir = (char*)malloc(sizeof(char*));
-  if(inboxdir == NULL){ D("unable to create inbox directory\n"); return; }
+  if(inboxdir == NULL){ D("no space for inbox directory\n"); return; }
   sprintf(inboxdir, "%s/inbox", pw->pw_dir);
   if (mkdir(inboxdir, 0700) && errno != EEXIST){
-    D("unable to create inbox directory %s\n", inboxdir);
+    D("unable to create inbox directory %s [%s]\n", inboxdir, strerror(errno));
   }
   if (chown(inboxdir, pw->pw_uid, pw->pw_gid) != 0){
-    D("unable to change permissions: %s\n", inboxdir);
+    D("unable to change permissions: %s [%s]\n", inboxdir, strerror(errno));
   }
   free(inboxdir);
   
