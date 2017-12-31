@@ -23,6 +23,11 @@ cleanconfig(void)
   if(options->get_account       ) { free((char*)options->get_account);    }
   if(options->prompt            ) { free((char*)options->prompt);         }
   if(options->ega_dir           ) { free((char*)options->ega_dir);        }
+  if(options->ega_fuse_dir      ) { free((char*)options->ega_fuse_dir);   }
+  if(options->ega_fuse_flags    ) { free((char*)options->ega_fuse_flags); }
+  if(options->ega_fuse_exec     ) { free((char*)options->ega_fuse_exec);  }
+  if(options->ega_gecos         ) { free((char*)options->ega_gecos);      }
+  if(options->ega_shell         ) { free((char*)options->ega_shell);      }
   if(options->cega_endpoint     ) { free((char*)options->cega_endpoint);  }
   if(options->cega_user         ) { free((char*)options->cega_user);      }
   if(options->cega_password     ) { free((char*)options->cega_password);  }
@@ -51,8 +56,17 @@ checkoptions(void)
   if(!options->get_password      ) { INVALID("get_password");     valid = false; }
   if(!options->get_account       ) { INVALID("get_account");      valid = false; }
   if(!options->prompt            ) { INVALID("prompt");           valid = false; }
+
   if(!options->ega_dir           ) { INVALID("ega_dir");          valid = false; }
   if(!options->ega_dir_attrs     ) { INVALID("ega_dir_attrs");    valid = false; }
+  if(!options->ega_fuse_dir      ) { INVALID("ega_fuse_dir");     valid = false; }
+  if(!options->ega_fuse_flags    ) { INVALID("ega_fuse_flags");   valid = false; }
+  if(!options->ega_fuse_exec     ) { INVALID("ega_fuse_exec");    valid = false; }
+  if(!options->ega_uid           ) { INVALID("ega_uid");          valid = false; }
+  if(!options->ega_gid           ) { INVALID("ega_gid");          valid = false; }
+  if(!options->ega_gecos         ) { INVALID("ega_gecos");        valid = false; }
+  if(!options->ega_shell         ) { INVALID("ega_shell");        valid = false; }
+
   if(!options->cega_endpoint     ) { INVALID("cega_endpoint");    valid = false; }
   if(!options->cega_user         ) { INVALID("cega_user");        valid = false; }
   if(!options->cega_password     ) { INVALID("cega_password");    valid = false; }
@@ -91,7 +105,7 @@ readconfig(const char* configfile)
       
   /* Default config values */
   options->cfgfile = configfile;
-  options->with_rest = ENABLE_CEGA;
+  options->with_cega = ENABLE_CEGA;
   options->rest_buffer_size = BUFFER_REST;
   options->prompt = PROMPT;
   options->ssl_cert = CEGA_CERT;
@@ -125,10 +139,18 @@ readconfig(const char* configfile)
     if(!strcmp(key, "debug"             )) { options->debug = true;                 }
     if(!strcmp(key, "db_connection"     )) { options->db_connstr = strdup(val);     }
 
-    if(!strcmp(key, "get_ent"           )) { options->get_ent = strdup(val);        }
     if(!strcmp(key, "add_user"          )) { options->add_user = strdup(val);       }
     if(!strcmp(key, "ega_dir"           )) { options->ega_dir = strdup(val);        }
-    if(!strcmp(key, "ega_dir_attrs"     )) { options->ega_dir_attrs = strtol(val, NULL, 8);  }
+    if(!strcmp(key, "ega_dir_attrs"     )) { options->ega_dir_attrs = strtol(val, NULL, 8);     }
+    if(!strcmp(key, "ega_uid"           )) { options->ega_uid = (uid_t) strtol(val, NULL, 10);  }
+    if(!strcmp(key, "ega_gid"           )) { options->ega_gid = (uid_t) strtol(val, NULL, 10);  }
+    if(!strcmp(key, "ega_gecos"         )) { options->ega_gecos = strdup(val);      }
+    if(!strcmp(key, "ega_shell"         )) { options->ega_shell = strdup(val);      }
+    if(!strcmp(key, "ega_fuse_dir"      )) { options->ega_fuse_dir = strdup(val);   }
+    if(!strcmp(key, "ega_fuse_exec"     )) { options->ega_fuse_exec = strdup(val);  }
+    if(!strcmp(key, "ega_fuse_flags"    )) { options->ega_fuse_flags = strdup(val); }
+
+    if(!strcmp(key, "get_ent"           )) { options->get_ent = strdup(val);        }
     if(!strcmp(key, "get_password"      )) { options->get_password = strdup(val);   }
     if(!strcmp(key, "get_account"       )) { options->get_account = strdup(val);    }
     if(!strcmp(key, "prompt"            )) { options->prompt = strdup(val);         }
@@ -143,9 +165,9 @@ readconfig(const char* configfile)
 
     if(!strcmp(key, "enable_cega")) {
       if(!strcmp(val, "yes") || !strcmp(val, "true")){
-	options->with_rest = true;
+	options->with_cega = true;
       } else {
-	SYSLOG("Could not parse the enable_cega: Using %s instead.", ((options->with_rest)?"yes":"no"));
+	SYSLOG("Could not parse the enable_cega: Using %s instead.", ((options->with_cega)?"yes":"no"));
       }
     }	
   }

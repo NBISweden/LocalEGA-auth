@@ -12,15 +12,6 @@
 #include "homedir.h"
 #include "blowfish/ow-crypt.h"
 
-/* define passwd column names */
-#define COL_NAME   0
-#define COL_PASSWD 1
-#define COL_UID    2
-#define COL_GID    3
-#define COL_GECOS  4
-#define COL_DIR    5
-#define COL_SHELL  6
-
 static PGconn* conn;
 
 /* connect to database */
@@ -62,23 +53,17 @@ backend_close(void)
   We use 'buffer' to store the result values, and increase its size if necessary.
   That way, we don't allocate strings for struct passwd
 */
-enum nss_status
-_res2pwd(PGresult *res, int row, int col,
-	 char **p, char **buf, size_t *buflen,
-	 int *errnop)
+static int
+_copy2buffer(const char* res, char **p, char **buf, size_t *buflen, int *errnop)
 {
-  const char *s;
-  size_t slen;
-
-  s = PQgetvalue(res, row, col);
-  slen = strlen(s);
+  size_t slen = strlen(res);
 
   if(*buflen < slen+1) {
     *errnop = ERANGE;
     D("**************** try again");
-    return NSS_STATUS_TRYAGAIN;
+    return 1;
   }
-  strncpy(*buf, s, slen);
+  strncpy(*buf, res, slen);
   (*buf)[slen] = '\0';
 
   *p = *buf; /* where is the value inside buffer */
@@ -86,7 +71,7 @@ _res2pwd(PGresult *res, int row, int col,
   *buf += slen + 1;
   *buflen -= slen + 1;
   
-  return NSS_STATUS_SUCCESS;
+  return 0;
 }
 
 /*
@@ -98,35 +83,33 @@ get_from_db(const char* username, struct passwd *result, char **buffer, size_t *
   enum nss_status status = NSS_STATUS_NOTFOUND;
   const char* params[1] = { username };
   PGresult *res;
-
-  D("Prepared Statement: %s with %s", options->get_ent, username);
+  char *dummy;
+  
+  D("Prepared Statement with %s: %s", username, options->get_ent);
   res = PQexecParams(conn, options->get_ent, 1, NULL, params, NULL, NULL, 0);
 
   /* Check answer */
-  if(PQresultStatus(res) != PGRES_TUPLES_OK || !PQntuples(res)) goto BAIL_OUT;
+  if(PQresultStatus(res) != PGRES_TUPLES_OK || !PQntuples(res)) goto BAILOUT;
 
+  D("Convert to passwd struct");
   /* no error, let's convert the result to a struct pwd */
-  status = _res2pwd(res, 0, COL_NAME, &(result->pw_name), buffer, buflen, errnop);
-  if(status != NSS_STATUS_SUCCESS) return status;
+  if(_copy2buffer(username          , &(result->pw_name)  , buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
+  if(_copy2buffer("x"               , &(result->pw_passwd), buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
+  if(_copy2buffer(options->ega_gecos, &(result->pw_gecos) , buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
+  if(_copy2buffer(options->ega_shell, &(result->pw_shell) , buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
 
-  status = _res2pwd(res, 0, COL_PASSWD, &(result->pw_passwd), buffer, buflen, errnop);
-  if(status != NSS_STATUS_SUCCESS) return status;
+  /* For the homedir: ega_fuse_dir/username */
+  if(_copy2buffer(options->ega_fuse_dir, &(result->pw_dir), buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
+  *(*buffer-1) = '/'; /* backtrack one char */
+  if(_copy2buffer(username, &dummy, buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
 
-  status = _res2pwd(res, 0, COL_GECOS, &(result->pw_gecos), buffer, buflen, errnop);
-  if(status != NSS_STATUS_SUCCESS) return status;
+  result->pw_uid = options->ega_uid;
+  result->pw_gid = options->ega_gid;
 
-  status = _res2pwd(res, 0, COL_DIR, &(result->pw_dir), buffer, buflen, errnop);
-  if(status != NSS_STATUS_SUCCESS) return status;
-
-  status = _res2pwd(res, 0, COL_SHELL, &(result->pw_shell), buffer, buflen, errnop);
-  if(status != NSS_STATUS_SUCCESS) return status;
-
-  result->pw_uid = (uid_t) strtoul(PQgetvalue(res, 0, COL_UID), (char**)NULL, 10);
-  result->pw_gid = (gid_t) strtoul(PQgetvalue(res, 0, COL_GID), (char**)NULL, 10);
-
+  D("Found: %s", username);
   status = NSS_STATUS_SUCCESS;
-  
-BAIL_OUT:
+
+BAILOUT:
   PQclear(res);
   return status;
 }
@@ -200,10 +183,8 @@ add_to_db(const char* username, const char* pwdh, const char* pubkey)
  * or contact CentralEGA and retry.
  */
 enum nss_status
-backend_get_userentry(const char *username,
-		      struct passwd *result,
-		      char **buffer, size_t *buflen,
-		      int *errnop)
+backend_get_userentry(const char *username, struct passwd *result,
+		      char **buffer, size_t *buflen, int *errnop)
 {
   D("called");
   enum nss_status status = NSS_STATUS_NOTFOUND;
@@ -215,8 +196,8 @@ backend_get_userentry(const char *username,
 
   /* OK, User not found in DB */
 
-  /* if REST disabled */
-  if(!options->with_rest){
+  /* if CEGA disabled */
+  if(!options->with_cega){
     D("Contacting cega for user %s is disabled", username);
     return NSS_STATUS_NOTFOUND;
   }
@@ -231,6 +212,7 @@ backend_get_userentry(const char *username,
     return status;
   }
 
+  D("No luck, user %s not found", username);
   /* No luck, user not found */
   return NSS_STATUS_NOTFOUND;
 }

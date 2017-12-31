@@ -2,7 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
-#include <pwd.h>
+#include <sys/mount.h>
+#include <sys/wait.h>
+#include <signal.h>
+#include <errno.h>
+#include <unistd.h>
 
 #define PAM_SM_AUTH
 #define PAM_SM_ACCT
@@ -202,58 +206,110 @@ PAM_EXTERN int
 pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
   const char *user;
-  int rc;
-  char* config_file = NULL;
-  int mflags = 0;
+  int rc, child;
+  char* homedir = NULL;
+  struct sigaction newsa, oldsa;
 
   rc = pam_get_user(pamh, &user, NULL);
   if ( rc != PAM_SUCCESS) { SYSLOG("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  pam_options(&mflags, &config_file, argc, argv);
-  if(!readconfig(config_file)){
-    D("Can't read config");
-    return PAM_SESSION_ERR;
-  }
-
   session_refresh_user(user); /* ignore result */
 
-  DBGLOG("Mounting LegaFS for user: %s", user);
+  /* Construct homedir */
+  homedir = (char*)malloc(sizeof(char*));
+  if(!homedir) return PAM_SESSION_ERR;
+  sprintf(homedir, "%s/%s", options->ega_fuse_dir, user);
 
-  /* mount() */
+  D("Mounting LegaFS for user %s at %s", user, homedir);
 
-  return PAM_SUCCESS;
+  /*
+   * This code arranges that the demise of the child does not cause
+   * the application to receive a signal it is not expecting - which
+   * may kill the application or worse.
+   */
+  memset(&newsa, '\0', sizeof(newsa));
+  newsa.sa_handler = SIG_DFL;
+  sigaction(SIGCHLD, &newsa, &oldsa);
+
+  /* mount(options->ega_fuse_exec, homedir, "fuse", options->ega_fuse_flags, NULL); */
+
+  /* fork */
+  child = fork();
+  if (child == 0) {
+     static char *envp[] = { NULL };
+     const char *args[] = { NULL, NULL };
+ 
+     /* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) */
+     /*   _exit(PAM_SESSION_ERR); */
+
+     /* exec the mkhomedir helper */
+     args[0] = homedir;
+     args[1] = options->ega_fuse_flags;
+     execve(options->ega_fuse_exec, (char *const *) args, envp);
+     /* should not get here: exit with error */
+     D("LegaFS is not available");
+     exit(PAM_SESSION_ERR);
+  }
+
+  if (child <= 0) {
+    D("fork failed");
+    pam_syslog(pamh, LOG_ERR, "fork failed: %m");
+    rc = PAM_SESSION_ERR;
+    goto BAILOUT;
+  }
+
+  /* Child > 0 */
+  if(waitpid(child, &rc, 0) < 0){
+    D("waitpid failed: %m");
+    rc = PAM_SESSION_ERR;
+    goto BAILOUT;
+  }
+  if (!WIFEXITED(rc) || errno == EINTR) { D("Error occured while mounting a LegaFS: %s", strerror(errno)); goto BAILOUT; }
+
+  rc = WEXITSTATUS(rc);
+  
+  sigaction(SIGCHLD, &oldsa, NULL);   /* restore old signal handler */
+
+  rc = chroot(homedir);
+  if(rc) D("Unable to chroot(%s): %s", homedir, strerror(errno));
+ 
+  D("Session open: Success");
+  rc = PAM_SUCCESS;
+
+BAILOUT:
+  free(homedir);
+  return rc;
 }
+
 
 PAM_EXTERN int
 pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
   const char *user;
   int rc;
-  const struct passwd *pwd;
+  char* homedir = NULL;
 
   rc = pam_get_user(pamh, &user, NULL);
   if ( rc != PAM_SUCCESS) { SYSLOG("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
   D("unmount LegaFS for %s (if not busy)", user);
 
-  /* Get the password entry */
-  pwd = pam_modutil_getpwnam (pamh, user);
-  if (pwd == NULL){
-    pam_syslog(pamh, LOG_NOTICE, "User unknown.");
-    D("couldn't identify user %s", user);
-    return PAM_CRED_INSUFFICIENT;
-  }
- 
-  /* /\* Stat the home directory, if something exists then we assume it is */
-  /*    correct and return a success *\/ */
-  /* if (stat(pwd->pw_dir, &St) == 0) { */
-  /*   pam_syslog(pamh, LOG_DEBUG, "Home directory %s already exists.", */
-  /*              pwd->pw_dir); */
-  /* } */
-  /* return PAM_SUCCESS; */
+  homedir = (char*)malloc(sizeof(char*));
+  if(!homedir) return PAM_INCOMPLETE;
+  sprintf(homedir, "%s/%s", options->ega_fuse_dir, user);
 
+  /* unmount */
+  rc = umount(homedir);
   
-  /* return PAM_SUCCESS; */
+  if(rc){
+    D("Unable to unmount %s: %s", homedir, strerror(errno));
+  } else {
+    /* Removing dir. Should be empty */
+    rc = rmdir(homedir);
+    if(rc) D("Unable to rmdir %s: %s", homedir, strerror(errno));
+  }
 
-  return rc;
+  D("Session close: Success");
+  free(homedir);
+  return PAM_SUCCESS;
 }

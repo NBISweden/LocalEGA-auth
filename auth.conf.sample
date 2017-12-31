@@ -12,17 +12,26 @@ cega_password = change_me
 cega_resp_passwd = .password
 cega_resp_pubkey = .public_key
 
-###################
+##################
 # NSS & PAM Queries
-###################
-
-get_ent = SELECT elixir_id,'x',1001,1001,'EGA User','/<fuse_mnt>/'|| elixir_id,'/sbin/nologin' FROM users WHERE elixir_id = $1 LIMIT 1
+##################
+get_ent = SELECT elixir_id FROM users WHERE elixir_id = $1 LIMIT 1
 add_user = SELECT insert_user($1,$2,$3)
-ega_dir = /ega/inbox
-ega_dir_attrs = 750 # in octal form
-
 get_password = SELECT password_hash FROM users WHERE elixir_id = $1 LIMIT 1
 get_account = SELECT elixir_id FROM users WHERE elixir_id = $1 and current_timestamp < last_accessed + expiration
 
-#promt = Knock Knock:
+#prompt = Knock Knock:
 
+ega_uid = 1000
+ega_gid = 1000
+ega_gecos = EGA User
+ega_shell = /sbin/nologin
+
+##################
+# FUSE mount
+##################
+ega_fuse_dir = /lega
+ega_fuse_exec = /usr/bin/ega-fs
+ega_fuse_dir = auto,nodev,noexec,uid=1000,gid=1000,suid
+ega_dir = /ega/inbox
+ega_dir_attrs = 2750 # rwxr-s---
