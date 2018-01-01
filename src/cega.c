@@ -109,7 +109,7 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
   curl_easy_setopt(curl, CURLOPT_FAILONERROR   , 1L               ); /* when not 200 */
 
   curl_easy_setopt(curl, CURLOPT_HTTPAUTH      , CURLAUTH_BASIC);
-  endpoint_creds = (char*)malloc(1 + strlen(options->cega_user) + strlen(options->cega_password));
+  endpoint_creds = (char*)malloc(sizeof(char) * (1 + strlen(options->cega_user) + strlen(options->cega_password)));
   sprintf(endpoint_creds, "%s:%s", options->cega_user, options->cega_password);
   D("CEGA credentials: %s", endpoint_creds);
   curl_easy_setopt(curl, CURLOPT_USERPWD       , endpoint_creds);

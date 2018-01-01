@@ -19,11 +19,8 @@ bool
 backend_open(int stayopen)
 {
   D("called with args: stayopen: %d", stayopen);
-  if(!readconfig(CFGFILE)){
-    D("Can't read config");
-    return false;
-  }
-  if(!conn){
+  if(!readconfig(CFGFILE)){ D("Can't read config"); return false; }
+  if(!conn){ 
     DBGLOG("Connection to: %s", options->db_connstr);
     conn = PQconnectdb(options->db_connstr);
   }
@@ -159,7 +156,7 @@ account_valid(const char* username)
   return status;
 }
 
-
+/* Assumes backend is open */
 bool
 add_to_db(const char* username, const char* pwdh, const char* pubkey)
 {

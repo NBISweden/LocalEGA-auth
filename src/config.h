@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#define CFGFILE "/etc/ega/auth2.conf"
+#define CFGFILE "/etc/ega/auth.conf"
 #define ENABLE_CEGA false
 #define BUFFER_REST 1024
 #define CEGA_CERT "/etc/ega/cega.pem"
@@ -28,11 +28,11 @@ struct options_s {
   const char* get_account;    /* SELECT elixir_id FROM users WHERE elixir_id = $1 */
   const char* prompt;         /* Please enter password */
 
+  const char* ega_dir;        /* EGA main inbox directory */
+  long int ega_dir_attrs;     /* in octal form */
   const char* ega_fuse_dir;   /* EGA virtual fuse top directory */
   const char* ega_fuse_exec;  /* LegaFS fuse executable */
-  const char* ega_fuse_flags; /* Mount flags for fuse directory per user */
-  const char* ega_dir;        /* EGA main inbox directory */
-  long int ega_dir_attrs;     /* EGA main inbox directory attributes: 0o2750 */
+  char* ega_fuse_flags;       /* Mount flags for fuse directory per user */
 
   /* Contacting Central EGA (vie REST call) */
   bool with_cega;                /* enable the lookup in case the entry is not found in the database cache */

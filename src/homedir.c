@@ -11,7 +11,7 @@
 
 static char*
 _expand_dir(const char* topdir, const char* username){
-  char* d = (char*)malloc(sizeof(char*));
+  char* d = (char*)malloc(sizeof(char)*(strlen(topdir)+strlen(username)+1));
   if(d) sprintf(d, "%s/%s", topdir, username);
   return d;
 }
