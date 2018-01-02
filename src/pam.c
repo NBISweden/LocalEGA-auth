@@ -188,8 +188,6 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
   rc = pam_get_user(pamh, &user, NULL);
   if ( rc != PAM_SUCCESS){ D("EGA: Unknown user: %s", strerror(errno)); rc = PAM_SESSION_ERR; }
 
-  if(!readconfig(CFGFILE)){ D("Can't read config"); return PAM_PERM_DENIED; }
-
   return account_valid(user);
 }
 
@@ -261,14 +259,14 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   rc = WEXITSTATUS(rc);
   if(rc) { D("Unable to mount LegaFS: %s", strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
 
-  D("Restoring old handler");
+  /* D("Restoring old handler"); */
   sigaction(SIGCHLD, &oldsa, NULL);   /* restore old signal handler */
   restore_handler = false;
- 
-  D("Chrooting");
+
+  D("Chrooting to %s", mountpoint);
   if (chdir(mountpoint)) { D("Unable to chdir to %s: %s", mountpoint, strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
   if (chroot(mountpoint)){ D("Unable to chroot(%s): %s", mountpoint, strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
- 
+
   D("Session open: Success");
   rc = PAM_SUCCESS;
 
@@ -282,36 +280,6 @@ BAILOUT:
 PAM_EXTERN int
 pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
-  const char *username;
-  int rc;
-  char* mountpoint;
-
-  rc = pam_get_user(pamh, &username, NULL);
-  if ( rc != PAM_SUCCESS) { D("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
-
-  D("unmount LegaFS for %s (if not busy)", username);
-
-  if(!readconfig(CFGFILE)){ D("Can't read config"); return PAM_SESSION_ERR; }
-
-  int slen_fuse = strlen(options->ega_fuse_dir), slen_user = strlen(username);
-
-  /* Construct mountpoint and rootdir_options */
-  mountpoint = (char*)malloc(sizeof(char) * (slen_fuse+slen_user+2));
-  if(!mountpoint) return PAM_SESSION_ERR;
-  sprintf(mountpoint, "%s/%s", options->ega_fuse_dir, username);
-
-  D("Unmount %s", mountpoint);
-  rc = umount(mountpoint);
-  
-  if(rc){
-    D("Unable to unmount %s: %s", mountpoint, strerror(errno));
-  } else {
-    /* Removing dir. Should be empty */
-    rc = rmdir(mountpoint);
-    if(rc) D("Unable to rmdir %s: %s", mountpoint, strerror(errno));
-  }
-
   D("Session close: Success");
-  free(mountpoint);
   return PAM_SUCCESS;
 }
