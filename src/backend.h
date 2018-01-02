@@ -19,6 +19,4 @@ int session_refresh_user(const char* username);
 
 bool backend_authenticate(const char *user, const char *pwd);
 
-bool backend_authenticate(const char *user, const char *pwd);
-
 #endif /* !__LEGA_BACKEND_H_INCLUDED__ */

@@ -75,7 +75,7 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
   CURL *curl;
   CURLcode res;
   bool success = false;
-  char endpoint[URL_SIZE];
+  char* endpoint = NULL;
   struct curl_res_s *cres = NULL;
   char* endpoint_creds = NULL;
   jv parsed_response;
@@ -95,7 +95,9 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
 
   if(!curl) { D("libcurl init failed"); goto BAIL_OUT; }
 
-  if( !sprintf(endpoint, options->cega_endpoint, username )){
+  endpoint = (char*)malloc(sizeof(char) * (strlen(options->cega_endpoint)+strlen(username)+1));
+  if(!endpoint){ D("Endpoint allocation troubles"); return false; }
+  if(!sprintf(endpoint, options->cega_endpoint, username)){
     D("Endpoint URL looks weird for user %s: %s", username, options->cega_endpoint);
     goto BAIL_OUT;
   }
@@ -153,6 +155,7 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
 BAIL_OUT:
   D("User %s%s found", username, (success)?"":" not");
   if(cres) free(cres);
+  if(endpoint) free(endpoint);
   if(endpoint_creds) free(endpoint_creds);
 
   jq_teardown(&jq);
