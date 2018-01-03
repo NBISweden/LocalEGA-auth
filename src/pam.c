@@ -198,7 +198,7 @@ PAM_EXTERN int
 pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
   const char *username;
-  char *mountpoint = NULL, *rootdir_options = NULL;
+  char *mountpoint = NULL, *mount_options = NULL;
   int rc, child;
   struct sigaction newsa, oldsa;
   bool restore_handler = false;
@@ -208,7 +208,8 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   if(!readconfig(CFGFILE)){ D("Can't read config"); return PAM_SESSION_ERR; }
 
-  int slen_fuse = strlen(options->ega_fuse_dir),
+  int slen_flags = strlen(options->ega_fuse_flags),
+      slen_fuse = strlen(options->ega_fuse_dir),
       slen_dir  = strlen(options->ega_dir),
       slen_user = strlen(username);
 
@@ -217,9 +218,9 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   if(!mountpoint) return PAM_SESSION_ERR;
   sprintf(mountpoint, "%s/%s", options->ega_fuse_dir, username);
 
-  rootdir_options = (char*)malloc(sizeof(char) * (slen_dir+slen_user+11));
-  if(!rootdir_options){ rc = PAM_SESSION_ERR; goto BAILOUT; }
-  sprintf(rootdir_options, ",rootdir=%s/%s", options->ega_dir, username);
+  mount_options = (char*)malloc(sizeof(char) * (slen_flags+slen_dir+(slen_user*2)+17));
+  if(!mount_options){ rc = PAM_SESSION_ERR; goto BAILOUT; }
+  sprintf(mount_options, "%s,rootdir=%s/%s,user=%s", options->ega_fuse_flags, options->ega_dir, username, username);
 
   D("Mounting LegaFS for user %s at %s", username, mountpoint);
 
@@ -241,13 +242,9 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
      /* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) */
      /*   _exit(PAM_SESSION_ERR); */
 
-    options->ega_fuse_flags = (char*)realloc(options->ega_fuse_flags, strlen(options->ega_fuse_flags)+strlen(rootdir_options)+sizeof(char));
-    if(!options->ega_fuse_flags) { D("Could not build the mount options"); rc = PAM_SESSION_ERR; goto BAILOUT; }
-    strcat(options->ega_fuse_flags, rootdir_options);
-
     /* exec the mkhomedir helper */
-    D("Executing: %s %s -o %s", options->ega_fuse_exec, mountpoint, options->ega_fuse_flags);
-    execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", options->ega_fuse_flags, (char*)NULL);
+    D("Executing: %s %s -o %s", options->ega_fuse_exec, mountpoint, mount_options);
+    execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", mount_options, (char*)NULL);
     /* should not get here: exit with error */
     D("LegaFS is not available"); rc = PAM_SESSION_ERR; goto BAILOUT;
   }
@@ -273,7 +270,7 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 BAILOUT:
   if(restore_handler) sigaction(SIGCHLD, &oldsa, NULL);
   if(mountpoint) free(mountpoint);
-  if(rootdir_options) free(rootdir_options);
+  if(mount_options) free(mount_options);
   return rc;
 }
 
