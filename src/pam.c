@@ -85,16 +85,16 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   rhost = (char*)item;
   if(rhost){ /* readconfig first, if using DBGLOG */
-    SYSLOG("EGA: attempting to authenticate: %s (from %s)", user, rhost);
+    D("EGA: attempting to authenticate: %s (from %s)", user, rhost);
   } else {
-    SYSLOG("EGA: attempting to authenticate: %s", user);
+    D("EGA: attempting to authenticate: %s", user);
   }
 
   /* Grab the already-entered password if we might want to use it. */
   if (mflags & (PAM_OPT_TRY_FIRST_PASS | PAM_OPT_USE_FIRST_PASS)){
     rc = pam_get_item(pamh, PAM_AUTHTOK, &item);
     if (rc != PAM_SUCCESS){
-      AUTHLOG("EGA: (already-entered) password retrieval failed: %s", pam_strerror(pamh, rc));
+      D("EGA: (already-entered) password retrieval failed: %s", pam_strerror(pamh, rc));
       return rc;
     }
   }
@@ -215,11 +215,11 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   /* Construct mountpoint and rootdir_options */
   mountpoint = (char*)malloc(sizeof(char) * (slen_fuse+slen_user+2));
-  if(!mountpoint) return PAM_SESSION_ERR;
+  if(!mountpoint) return PAM_ABORT;
   sprintf(mountpoint, "%s/%s", options->ega_fuse_dir, username);
 
   mount_options = (char*)malloc(sizeof(char) * (slen_flags+slen_dir+(slen_user*2)+17));
-  if(!mount_options){ rc = PAM_SESSION_ERR; goto BAILOUT; }
+  if(!mount_options){ rc = PAM_ABORT; goto BAILOUT; }
   sprintf(mount_options, "%s,rootdir=%s/%s,user=%s", options->ega_fuse_flags, options->ega_dir, username, username);
 
   D("Mounting LegaFS for user %s at %s", username, mountpoint);
@@ -236,7 +236,7 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   /* fork */
   child = fork();
-  if (child < 0) { D("LegaFS fork failed: %s", strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
+  if (child < 0) { D("LegaFS fork failed: %s", strerror(errno)); rc = PAM_ABORT; goto BAILOUT; }
 
   if (child == 0) {
      /* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) */
@@ -246,19 +246,18 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
     D("Executing: %s %s -o %s", options->ega_fuse_exec, mountpoint, mount_options);
     execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", mount_options, (char*)NULL);
     /* should not get here: exit with error */
-    D("LegaFS is not available"); rc = PAM_SESSION_ERR; goto BAILOUT;
+    D("LegaFS is not available");
+    if(mountpoint) free(mountpoint);
+    if(mount_options) free(mount_options);
+    exit(errno);
   }
 
   /* Child > 0 */
-  if(waitpid(child, &rc, 0) < 0) { D("waitpid failed [%d]: %s", rc, strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
+  if(waitpid(child, &rc, 0) < 0) { D("waitpid failed [%d]: %s", rc, strerror(errno)); rc = PAM_ABORT; goto BAILOUT; }
   if (!WIFEXITED(rc) || errno == EINTR) { D("Error occured while mounting a LegaFS: %s", strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
 
   rc = WEXITSTATUS(rc);
-  if(rc) { D("Unable to mount LegaFS: %s", strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
-
-  /* D("Restoring old handler"); */
-  sigaction(SIGCHLD, &oldsa, NULL);   /* restore old signal handler */
-  restore_handler = false;
+  if(rc) { D("Unable to mount LegaFS [Exit %d]", rc); rc = PAM_SESSION_ERR; goto BAILOUT; }
 
   D("Chrooting to %s", mountpoint);
   if (chdir(mountpoint)) { D("Unable to chdir to %s: %s", mountpoint, strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }

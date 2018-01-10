@@ -24,7 +24,7 @@ NSS_OBJECTS = $(NSS_SOURCES:%.c=%.o)
 PAM_SOURCES = pam.c config.c backend.c cega.c homedir.c $(wildcard blowfish/*.c)
 PAM_OBJECTS = $(PAM_SOURCES:%.c=%.o) blowfish/x86.o
 
-.PHONY: clean install
+.PHONY: all debug clean install install-nss install-pam
 .SUFFIXES: .c .o .S .so .so.2 .so.2.0
 
 all: install

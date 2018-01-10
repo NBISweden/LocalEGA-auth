@@ -49,8 +49,8 @@ _nss_ega_getpwnam_r(const char *username,
 		    int *errnop)
 {
   /* bail out if we're looking for the root user */
-  if( !strcmp(username, "root") ) return NSS_STATUS_NOTFOUND;
-  if( !strcmp(username, "ega") ) return NSS_STATUS_NOTFOUND;
+  if( !strcmp(username, "root") ){ D("bail out when root"); return NSS_STATUS_NOTFOUND; }
+  if( !strcmp(username, "ega")  ){ D("bail out when ega");  return NSS_STATUS_NOTFOUND; }
   D("called with args: username: %s", username);
   return backend_get_userentry(username, result, &buffer, &buflen, errnop);
 }
