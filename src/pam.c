@@ -186,7 +186,7 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   D("called");
   rc = pam_get_user(pamh, &user, NULL);
-  if ( rc != PAM_SUCCESS){ D("EGA: Unknown user: %s", strerror(errno)); rc = PAM_SESSION_ERR; }
+  if ( rc != PAM_SUCCESS) { D("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
   return account_valid(user);
 }
