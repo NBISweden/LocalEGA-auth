@@ -19,31 +19,13 @@
                           closelog();                               \
                       } while(0);
 
+#define D(...)
+
+
 #ifdef DEBUG
-
 #include <stdio.h>
-
-#define D(x...) do { fprintf(stderr, "EGA %-10s | %4d | %22s | ", __FILE__, __LINE__, __FUNCTION__); \
-	             fprintf(stderr, ##x);                                                           \
-                } while(0);
-
-#define PAMD(x...) do {                                          \
-                          openlog("EGA_auth", LOG_PID, LOG_USER);   \
-			  syslog(LOG_INFO, "EGA %-10s | %4d | %22s | ", __FILE__, __LINE__, __FUNCTION__); \
-	                  syslog(LOG_AUTH, ##x);                \
-                          closelog();                               \
-                      } while(0);
-
-/* #undef DBGLOG */
-/* #undef SYSLOG */
-/* #undef AUTHLOG */
-/* #define DBGLOG(y...) do { D( ##y ); fprintf(stderr, "\n"); } while(0); */
-/* #define SYSLOG(y...) do { D( ##y ); fprintf(stderr, "\n"); } while(0); */
-/* #define AUTHLOG(y...) do { D( ##y ); fprintf(stderr, "\n"); } while(0); */
-
-#else
-
-#define D(x...)
+#undef D
+#define D(fmt, ...) fprintf(stderr, "EGA %-10s | %4d | %22s | "fmt"\n", __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
 
 #endif /* !DEBUG */
 
