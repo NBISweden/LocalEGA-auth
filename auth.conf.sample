@@ -1,9 +1,8 @@
 debug = ok_why_not
 
 ##################
-# Databases
+# Central EGA
 ##################
-db_connection = host=ega_db port=5432 dbname=lega user=postgres password=CHANGE-ME-PLEASE connect_timeout=1 sslmode=disable
 
 enable_cega = yes
 cega_endpoint = http://cega_users/user/%s
@@ -13,19 +12,20 @@ cega_resp_passwd = .password
 cega_resp_pubkey = .public_key
 
 ##################
-# NSS & PAM Queries
+# NSS & PAM
 ##################
-get_ent = SELECT elixir_id FROM users WHERE elixir_id = $1 LIMIT 1
-add_user = SELECT insert_user($1,$2,$3)
-get_password = SELECT password_hash FROM users WHERE elixir_id = $1 LIMIT 1
-get_account = SELECT elixir_id FROM users WHERE elixir_id = $1 and current_timestamp < last_accessed + expiration
 
-#prompt = Knock Knock:
+# expiration = 100
+# prompt = Knock Knock:
+# cache_dir = /ega/cache
 
 ega_uid = 1000
 ega_gid = 1000
 ega_gecos = EGA User
 ega_shell = /sbin/nologin
+
+ega_dir = /ega/inbox
+ega_dir_attrs = 2750 # rwxr-s---
 
 ##################
 # FUSE mount
@@ -33,6 +33,3 @@ ega_shell = /sbin/nologin
 ega_fuse_dir = /lega
 ega_fuse_exec = /usr/bin/ega-fs
 ega_fuse_flags = nodev,noexec,uid=1000,gid=1000,suid
-
-ega_dir = /ega/inbox
-ega_dir_attrs = 2750 # rwxr-s---

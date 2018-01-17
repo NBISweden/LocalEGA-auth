@@ -15,13 +15,9 @@ cleanconfig(void)
   if(!options) return;
 
   SYSLOG("Cleaning the config struct");
-  if(!options->cfgfile          ) { free((char*)options->cfgfile);        }
-  if(options->db_connstr        ) { free((char*)options->db_connstr);     }
-  if(options->get_ent           ) { free((char*)options->get_ent);        }
-  if(options->add_user          ) { free((char*)options->add_user);       }
-  if(options->get_password      ) { free((char*)options->get_password);   }
-  if(options->get_account       ) { free((char*)options->get_account);    }
+  if(options->cfgfile           ) { free((char*)options->cfgfile);        }
   if(options->prompt            ) { free((char*)options->prompt);         }
+  if(options->cache_dir         ) { free((char*)options->cache_dir);      }
   if(options->ega_dir           ) { free((char*)options->ega_dir);        }
   if(options->ega_fuse_dir      ) { free((char*)options->ega_fuse_dir);   }
   if(options->ega_fuse_flags    ) { free((char*)options->ega_fuse_flags); }
@@ -50,11 +46,6 @@ checkoptions(void)
   }
 
   D("Checking the config struct");
-  if(!options->db_connstr        ) { INVALID("db_connection");    valid = false; }
-  if(!options->get_ent           ) { INVALID("get_ent");          valid = false; }
-  if(!options->add_user          ) { INVALID("add_user");         valid = false; }
-  if(!options->get_password      ) { INVALID("get_password");     valid = false; }
-  if(!options->get_account       ) { INVALID("get_account");      valid = false; }
   if(!options->prompt            ) { INVALID("prompt");           valid = false; }
 
   if(!options->ega_dir           ) { INVALID("ega_dir");          valid = false; }
@@ -62,6 +53,8 @@ checkoptions(void)
   if(!options->ega_fuse_dir      ) { INVALID("ega_fuse_dir");     valid = false; }
   if(!options->ega_fuse_flags    ) { INVALID("ega_fuse_flags");   valid = false; }
   if(!options->ega_fuse_exec     ) { INVALID("ega_fuse_exec");    valid = false; }
+
+  if(!options->cache_dir         ) { INVALID("cache_dir");        valid = false; }
 
   if(!options->ega_uid           ) { INVALID("ega_uid");          valid = false; }
   if(!options->ega_gid           ) { INVALID("ega_gid");          valid = false; }
@@ -108,6 +101,8 @@ readconfig(const char* configfile)
   options->cfgfile = configfile;
   options->with_cega = ENABLE_CEGA;
   options->rest_buffer_size = BUFFER_REST;
+  options->expiration = EGA_ACCOUNT_EXPIRATION;
+  options->cache_dir = CACHE_DIR;
   options->prompt = PROMPT;
   options->ssl_cert = CEGA_CERT;
 
@@ -138,9 +133,7 @@ readconfig(const char* configfile)
     } else val = NULL; /* could not find the '=' sign */
 	
     if(!strcmp(key, "debug"             )) { options->debug = true;                 }
-    if(!strcmp(key, "db_connection"     )) { options->db_connstr = strdup(val);     }
 
-    if(!strcmp(key, "add_user"          )) { options->add_user = strdup(val);       }
     if(!strcmp(key, "ega_dir"           )) { options->ega_dir = strdup(val);        }
     if(!strcmp(key, "ega_dir_attrs"     )) { options->ega_dir_attrs = strtol(val, NULL, 8);    }
     if(!strcmp(key, "ega_uid"           )) { options->ega_uid = (uid_t) strtol(val, NULL, 10); }
@@ -152,9 +145,8 @@ readconfig(const char* configfile)
     if(!strcmp(key, "ega_fuse_exec"     )) { options->ega_fuse_exec = strdup(val);  }
     if(!strcmp(key, "ega_fuse_flags"    )) { options->ega_fuse_flags = strdup(val); }
 
-    if(!strcmp(key, "get_ent"           )) { options->get_ent = strdup(val);        }
-    if(!strcmp(key, "get_password"      )) { options->get_password = strdup(val);   }
-    if(!strcmp(key, "get_account"       )) { options->get_account = strdup(val);    }
+    if(!strcmp(key, "expiration"        )) { options->expiration = strtol(val, NULL, 10); }
+    if(!strcmp(key, "cache_dir"         )) { options->cache_dir = strdup(val);      }
     if(!strcmp(key, "prompt"            )) { options->prompt = strdup(val);         }
 
     if(!strcmp(key, "cega_endpoint"     )) { options->cega_endpoint = strdup(val);  }

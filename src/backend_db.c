@@ -115,7 +115,7 @@ BAILOUT:
  * refresh the user last accessed date
  */
 int
-session_refresh_user(const char* username)
+backend_refresh_user(const char* username)
 {
   int status = PAM_SESSION_ERR;
   const char* params[1] = { username };
@@ -199,7 +199,7 @@ backend_get_userentry(const char *username, struct passwd *result,
     return NSS_STATUS_NOTFOUND;
   }
     
-  if(!fetch_from_cega(username, buffer, buflen, errnop))
+  if(fetch_from_cega(username, buffer, buflen, errnop))
     return NSS_STATUS_NOTFOUND;
 
   /* User retrieved from Central EGA, try again the DB */

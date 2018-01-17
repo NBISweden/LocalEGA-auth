@@ -188,7 +188,7 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
   rc = pam_get_user(pamh, &user, NULL);
   if ( rc != PAM_SUCCESS) { D("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  return account_valid(user);
+  return backend_account_valid(user);
 }
 
 /*

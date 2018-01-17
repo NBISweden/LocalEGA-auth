@@ -1,9 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <errno.h>
 #include <stdbool.h>
-#include <libpq-fe.h>
 
 #include <curl/curl.h>
 #include <jq.h>
@@ -22,11 +20,15 @@ struct curl_res_s {
 /* callback for curl fetch */
 size_t
 curl_callback (void *contents, size_t size, size_t nmemb, void *p) {
-  const size_t realsize = size * nmemb;                      /* calculate buffer size */
+  const size_t realsize = size * nmemb;            /* calculate buffer size */
   struct curl_res_s *cres = (struct curl_res_s *) p;   /* cast pointer to fetch struct */
 
   /* expand buffer */
-  cres->body = (char *) realloc(cres->body, cres->size + realsize + 1);
+  D("cres->body: %s", cres->body);
+  D("cres->size: %zd", cres->size);
+  D("change to %zd", cres->size + realsize + 1);
+
+  cres->body = (char*)realloc(cres->body, cres->size + realsize + 1);
 
   /* check buffer */
   if (cres->body == NULL) {
@@ -69,14 +71,14 @@ get_from_json(jq_state *jq, const char* query, jv json){
   return res;
 }
 
-bool
-fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop)
+int
+fetch_from_cega(const char *username, char **buffer, size_t *buflen)
 {
   CURL *curl;
   CURLcode res;
-  bool success = false;
+  int rc = 1;
   char* endpoint = NULL;
-  struct curl_res_s *cres = NULL;
+  void *cres = NULL;
   char* endpoint_creds = NULL;
   jv parsed_response;
   jq_state* jq = NULL;
@@ -87,21 +89,41 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
 
   if(!options->cega_user || !options->cega_password){
     D("Empty CEGA credentials");
-    return false; /* early quit */
+    return 1; /* early quit */
   }
 
   curl_global_init(CURL_GLOBAL_DEFAULT);
   curl = curl_easy_init();
 
-  if(!curl) { D("libcurl init failed"); goto BAIL_OUT; }
+  if(!curl) { D("libcurl init failed"); goto BAILOUT; }
 
   endpoint = (char*)malloc(sizeof(char) * (strlen(options->cega_endpoint)+strlen(username)+1));
-  if(!endpoint){ D("Endpoint allocation troubles"); return false; }
+  if(!endpoint){ D("Endpoint allocation troubles"); return 1; }
   if(!sprintf(endpoint, options->cega_endpoint, username)){
     D("Endpoint URL looks weird for user %s: %s", username, options->cega_endpoint);
-    goto BAIL_OUT;
+    goto BAILOUT;
   }
+  
+  D("CEGA endpoint: %s", endpoint);
 
+
+  size_t culen = strlen(options->cega_user);
+  size_t cplen = strlen(options->cega_password);
+
+  if(*buflen < culen+cplen+1) { D("Buffer too small"); rc = -1; goto BAILOUT; }
+
+  endpoint_creds = *buffer;
+  strncpy(*buffer, options->cega_user, culen);
+  (*buffer)[culen] = ':';
+  *buffer += culen + 1;
+  strncpy(*buffer, options->cega_password, cplen);
+  (*buffer)[cplen] = '\0';
+  *buffer += cplen + 1;
+  *buflen -= culen + cplen + 1;
+  D("CEGA credentials: %s", endpoint_creds);
+
+  /* Preparing CURL */
+  D("Preparing CURL");
   cres = (struct curl_res_s*)malloc(sizeof(struct curl_res_s));
   cres->body = NULL;
   cres->size = 0;
@@ -109,15 +131,10 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
   curl_easy_setopt(curl, CURLOPT_NOPROGRESS    , 1L               ); /* shut off the progress meter */
   curl_easy_setopt(curl, CURLOPT_URL           , endpoint         );
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION , curl_callback    );
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA     , (void *)cres     );
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA     , cres             );
   curl_easy_setopt(curl, CURLOPT_FAILONERROR   , 1L               ); /* when not 200 */
-
   curl_easy_setopt(curl, CURLOPT_HTTPAUTH      , CURLAUTH_BASIC);
-  endpoint_creds = (char*)malloc(sizeof(char) * (1 + strlen(options->cega_user) + strlen(options->cega_password)));
-  sprintf(endpoint_creds, "%s:%s", options->cega_user, options->cega_password);
-  D("CEGA credentials: %s", endpoint_creds);
   curl_easy_setopt(curl, CURLOPT_USERPWD       , endpoint_creds);
- 
   /* curl_easy_setopt(curl, CURLOPT_SSLCERT      , options->ssl_cert); */
   /* curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE  , "PEM"            ); */
 
@@ -127,42 +144,39 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
 #endif
 
   /* Perform the request, res will get the return code */
-  D("Connecting to %s", endpoint);
   res = curl_easy_perform(curl);
   D("CEGA Request done");
   if(res != CURLE_OK){
     D("curl_easy_perform() failed: %s", curl_easy_strerror(res));
-    goto BAIL_OUT;
+    goto BAILOUT;
   }
 
   D("Parsing the JSON response");
-  parsed_response = jv_parse(cres->body);
+  parsed_response = jv_parse(((struct curl_res_s *)cres)->body);
 
   if (!jv_is_valid(parsed_response)) {
     D("Invalid response");
-    goto BAIL_OUT;
+    goto BAILOUT;
   }
 
   /* Preparing the queries */
   jq = jq_init();
-  if (jq == NULL) { D("jq error with malloc"); goto BAIL_OUT; }
+  if (jq == NULL) { D("jq error with malloc"); goto BAILOUT; }
 
   pwd = get_from_json(jq, options->cega_resp_passwd, jv_copy(parsed_response));
   pbk = get_from_json(jq, options->cega_resp_pubkey, jv_copy(parsed_response));
 
-  /* Adding to the database */
-  success = add_to_db(username, pwd, pbk);
   jv_free(parsed_response);
 
-BAIL_OUT:
-  D("User %s%s found", username, (success)?"":" not");
-  if(cres) free(cres);
-  if(endpoint) free(endpoint);
-  if(endpoint_creds) free(endpoint_creds);
+  /* Adding to the database */
+  rc = backend_add_user(username, pwd, pbk);
 
+BAILOUT:
+  D("User %s%s found [Error %d]", username, (rc)?" not":"", rc);
+  if(cres) free(cres);
   jq_teardown(&jq);
 
   curl_easy_cleanup(curl);
   curl_global_cleanup();
-  return success;
+  return rc;
 }

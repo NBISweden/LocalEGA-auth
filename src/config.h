@@ -8,6 +8,8 @@
 #define BUFFER_REST 1024
 #define CEGA_CERT "/etc/ega/cega.pem"
 #define PROMPT "Please, enter your EGA password: "
+#define EGA_ACCOUNT_EXPIRATION 100
+#define CACHE_DIR "/ega/cache"
 
 struct options_s {
   bool debug;
@@ -22,11 +24,10 @@ struct options_s {
   const char* ega_gecos;      /* EGA User */
   const char* ega_shell;      /* /bin/bash or /sbin/nologin */
 
-  const char* get_ent;        /* SELECT * FROM users WHERE elixir_id = $1 */
-  const char* add_user;       /* INSERT INTO users (elixir_id, password_hash, pubkey) VALUES($1,$2,$3) */
-  const char* get_password;   /* SELECT password_hash FROM users WHERE elixir_id = $1 */
-  const char* get_account;    /* SELECT elixir_id FROM users WHERE elixir_id = $1 */
+  long int expiration;        /* Delay in minutes */
   const char* prompt;         /* Please enter password */
+
+  const char* cache_dir;      /* Cache directory for EGA users */
 
   const char* ega_dir;        /* EGA main inbox directory */
   long int ega_dir_attrs;     /* in octal form */
