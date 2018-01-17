@@ -5,11 +5,14 @@
 
 #define CFGFILE "/etc/ega/auth.conf"
 #define ENABLE_CEGA false
-#define BUFFER_REST 1024
 #define CEGA_CERT "/etc/ega/cega.pem"
 #define PROMPT "Please, enter your EGA password: "
 #define EGA_ACCOUNT_EXPIRATION 100
+
 #define CACHE_DIR "/ega/cache"
+#define STORAGE_SIZE 1024
+#define PASSWORD "/password_hash"
+#define PUBKEY   "/pubkey"
 
 struct options_s {
   bool debug;
@@ -42,7 +45,6 @@ struct options_s {
   const char* cega_password;     /* for authentication: user:password */
   const char* cega_resp_passwd;  /* Searching with jq for the password field */
   const char* cega_resp_pubkey;  /* Searching with jq for the public key field */
-  long int rest_buffer_size;     /* 1024 */
   const char* ssl_cert;          /* path the SSL certificate to contact Central EGA */
 };
 

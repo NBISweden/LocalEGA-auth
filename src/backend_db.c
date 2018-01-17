@@ -74,7 +74,7 @@ _copy2buffer(const char* res, char **p, char **buf, size_t *buflen, int *errnop)
 /*
  * 'convert' a PGresult to struct passwd
  */
-enum nss_status
+static enum nss_status
 get_from_db(const char* username, struct passwd *result, char **buffer, size_t *buflen, int *errnop)
 {
   enum nss_status status = NSS_STATUS_NOTFOUND;
@@ -115,7 +115,8 @@ BAILOUT:
  * refresh the user last accessed date
  */
 int
-backend_refresh_user(const char* username)
+backend_refresh_user(const char* username,
+		     char **buffer, size_t *buflen)
 {
   int status = PAM_SESSION_ERR;
   const char* params[1] = { username };
@@ -137,7 +138,8 @@ backend_refresh_user(const char* username)
  * Has the account expired
  */
 int
-account_valid(const char* username)
+backend_account_valid(const char* username,
+	      char **buffer, size_t *buflen)
 {
   int status = PAM_PERM_DENIED;
   const char* params[1] = { username };
@@ -158,7 +160,8 @@ account_valid(const char* username)
 
 /* Assumes backend is open */
 bool
-add_to_db(const char* username, const char* pwdh, const char* pubkey)
+backend_add_user(const char* username, const char* pwdh, const char* pubkey,
+		 char **buffer, size_t *buflen)
 {
   const char* params[3] = { username, pwdh, pubkey };
   PGresult *res;
@@ -216,7 +219,8 @@ backend_get_userentry(const char *username, struct passwd *result,
 
 
 bool
-backend_authenticate(const char *username, const char *password)
+backend_authenticate(const char *username, const char *password,
+		     char **buffer, size_t *buflen)
 {
   int status = false;
   const char* params[1] = { username };

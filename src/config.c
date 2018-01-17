@@ -100,7 +100,6 @@ readconfig(const char* configfile)
   /* Default config values */
   options->cfgfile = configfile;
   options->with_cega = ENABLE_CEGA;
-  options->rest_buffer_size = BUFFER_REST;
   options->expiration = EGA_ACCOUNT_EXPIRATION;
   options->cache_dir = CACHE_DIR;
   options->prompt = PROMPT;
@@ -154,7 +153,6 @@ readconfig(const char* configfile)
     if(!strcmp(key, "cega_password"     )) { options->cega_password = strdup(val);  }
     if(!strcmp(key, "cega_resp_passwd"  )) { options->cega_resp_passwd=strdup(val); }
     if(!strcmp(key, "cega_resp_pubkey"  )) { options->cega_resp_pubkey=strdup(val); }
-    if(!strcmp(key, "rest_buffer_size"  )) { options->rest_buffer_size=strtol(val, NULL, 10); }
     if(!strcmp(key, "ssl_cert"          )) { options->ssl_cert = strdup(val);       }
 
     if(!strcmp(key, "enable_cega")) {

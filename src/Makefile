@@ -21,7 +21,7 @@ HEADERS = debug.h config.h backend.h cega.h homedir.h $(wildcard blowfish/*.h)
 NSS_SOURCES = nss.c config.c backend_fs.c cega.c homedir.c
 NSS_OBJECTS = $(NSS_SOURCES:%.c=%.o)
 
-PAM_SOURCES = pam.c config.c backend_fs.c cega.c homedir.c $(wildcard blowfish/*.c)
+PAM_SOURCES = pam.c storage.c config.c backend_fs.c cega.c homedir.c $(wildcard blowfish/*.c)
 PAM_OBJECTS = $(PAM_SOURCES:%.c=%.o) blowfish/x86.o
 
 .PHONY: all debug clean install install-nss install-pam
