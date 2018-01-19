@@ -18,7 +18,7 @@ LIBS=-lpam -lcurl -ljq
 LIBDIR=/usr/local/lib/ega
 BINDIR=/usr/local/bin
 
-HEADERS = debug.h config.h backend.h cega.h homedir.h $(wildcard blowfish/*.h)
+HEADERS = utils.h config.h backend.h cega.h homedir.h $(wildcard blowfish/*.h)
 
 NSS_SOURCES = nss.c config.c backend.c cega.c homedir.c
 NSS_OBJECTS = $(NSS_SOURCES:%.c=%.o)
@@ -70,7 +70,7 @@ install-pam: $(PAM_LIBRARY)
 install-keys: $(KEYS_EXEC)
 	@[ -d $(BINDIR) ] || { echo "Creating bin dir: $(BINDIR)"; install -d $(BINDIR); }
 	@echo "Installing $< into $(BINDIR)"
-	@install $< $(BINDIR)
+	@install -m 700 $< $(BINDIR)
 
 install: install-nss install-pam install-keys
 	@echo "Do not forget to run ldconfig and create/configure the file /etc/ega/auth.conf"

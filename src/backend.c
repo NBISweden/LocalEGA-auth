@@ -1,33 +1,14 @@
-#define _XOPEN_SOURCE 500
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include <ftw.h>
 #include <unistd.h>
-#include <security/pam_appl.h>
+#include <time.h>
 
-#include "debug.h"
+#include "utils.h"
 #include "config.h"
 #include "backend.h"
-
-
-
-bool
-backend_open(int stayopen)
-{
-  D("called with args: stayopen: %d", stayopen);
-  if(!readconfig(CFGFILE)){ D("Can't read config"); return false; }
-
-  return true;
-}
-
-void
-backend_close(void)
-{ 
-  D("called");
-}
 
 /*
   We use 'buffer' to store the cache/username/item path.
@@ -39,89 +20,35 @@ backend_close(void)
 	 n strictly positive for nb of bytes returned
 */
 
-static int
-_copy2buffer(const char* data, char **bufptr, size_t *buflen)
-{
-  size_t slen = strlen(data);
-
-  if(*buflen < slen+1) {
-    D("buffer too small [currently: %zd] to copy %s [%zd]", *buflen, data, slen);
-    return -1;
-  }
-
-  strncpy(*bufptr, data, slen);
-  (*bufptr)[slen] = '\0';
-
-  *bufptr += slen + 1;
-  *buflen -= slen + 1;
-  
-  return 0;
-}
-
-/*
- * Copies <cache_dir>/<username>[/item] to the buffer pointed by bufptr
- */
-static int
-name2path(const char* username, const char* item, const char** path, char **bufptr, size_t *buflen){
-  int rc = 0;
-
-  *path = *bufptr; /* record start */
-  
-  if( (rc = _copy2buffer(options->cache_dir, bufptr, buflen)) ) { return rc; }
-  *(*bufptr-1) = '/'; /* backtrack one char */
-
-  if( (rc = _copy2buffer(username, bufptr, buflen)) ) { return rc; }
-
-  if(item){
-    (*bufptr)--; /* backtrack one char */
-    if( (rc = _copy2buffer(item, bufptr, buflen)) ) { return rc; }
-  }
-  return 0;
-}
-
 int
-backend_get_item(const char* username, const char* item, char** content, char** bufptr, size_t* buflen){
+backend_get_item(const char* username, const char* item, char** content){
 
   long length;
-  FILE* f = NULL;
-  const char* path = NULL;
-  int rc = 0;
+  _cleanup_file_ FILE* f = NULL;
 
   D("Loading %s file for user %s", item, username);
 
-  if( (rc = name2path(username, item, &path, bufptr, buflen)) ){ return rc; }
+  char* path = strjoina(options->cache_dir, "/", username, "/", item);
 
   D("Loading %s", path);
 
   f = fopen (path, "rb");
-  if(!f){ D("Could not open file: %s", path); return -2; }
+  if( !f || ferror(f) ){ D("Could not open file: %s", path); return -2; }
 
   /* Get the size */
   fseek (f, 0, SEEK_END);
-  length = ftell(f);
+  length = ftell(f) + 1;
   fseek (f, 0, SEEK_SET); // rewind
 
-  if(*buflen < length + 1) { D("buffer too small for file: %s", path); return -1; }
-
-  *content = *bufptr; /* record where in the buffer */
-  rc = fread(*bufptr, sizeof(char), length, f); // \0 terminated?
-  *bufptr += length; // +1 ?
-  *buflen -= length; // +1 ?
-
-  fclose (f);
-  return rc;
+  *content = (char*)malloc(sizeof(char) * length);
+  return fread(*content, sizeof(char), length, f); // \0 terminated?
 }
 
-static int
-store_file(const char* username, const char* item, const char* content, char** bufptr, size_t* buflen){
+int
+backend_set_item(const char* username, const char* item, const char* content){
 
-  FILE* f = NULL;
-  const char* path = NULL;
-  int rc = 0;
-
-  if(!content){ D("Nothing to store for %s", item); return 0; }
-
-  if( (rc = name2path(username, item, &path, bufptr, buflen)) ){ return rc; }
+  _cleanup_file_ FILE* f = NULL;
+  char* path = strjoina(options->cache_dir, "/", username, "/", item);
 
   D("Opening file: %s", path);
 
@@ -130,168 +57,90 @@ store_file(const char* username, const char* item, const char* content, char** b
   chmod(path, 0600);
 
   D("Storing data: %s", content);
-  rc = fwrite(content, sizeof(char), strlen(content), f);
-
-  fclose (f);
-  return rc + 1;
+  return (fwrite(content, sizeof(char), strlen(content), f) > 0)?0:-2;
 }
 
-static int
-delete_cache(const char *path, const struct stat *sb, int tflag, struct FTW *ftwbuf)
+/*
+ * Assumes config file already read
+ */
+bool
+backend_add_user(const char* username, const char* pwdh, const char* pubkey)
 {
-  D("Deleting %s", path);
-  int rv = remove(path);
-  if (rv) perror(path);
-  return rv;
+  char* userdir = strjoina(options->cache_dir, "/", username);
+  /* Create the new directory */
+  D("Userdir for %s: %s", username, userdir);
+  if (mkdir(userdir, 0700)){ D("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
+
+  /* Store the files */
+  int rc;
+  if( pwdh && (rc = backend_set_item(username, PASSWORD, pwdh)) < 0 ){
+    D("Problem storing password hash for user %s", username); return false;
+  }
+  if( pubkey && (rc = backend_set_item(username, PUBKEY, pubkey)) < 0){
+    D("Problem storing public key for user %s", username); return false;
+  }
+
+  char seconds[20]; // Laaaaaaaaaaaaarge enough!
+  sprintf(seconds, "%ld", time(NULL));
+  if( (rc = backend_set_item(username, LAST_ACCESSED, seconds)) < 0){
+    D("Problem storing expiration for user %s", username);
+    return false;
+  }
+
+  return true;
 }
 
-static int
-cache_hit(const char* username, const char** path, char **buffer, size_t *buflen){
+static bool
+cache_hit(const char* path){
 
   struct stat st;
-  int rc = -2;
-
-  if( (rc = name2path(username, NULL, path, buffer, buflen)) ) { return rc; }
-
-  D("Path to %s: %s", username, *path);
 
   /* Check path exists */
-  if( stat(*path,&st) ){ 
-    if (errno != ENOENT){ D("stat(%s) failed", *path); }
-    nftw(*path, delete_cache, 1, FTW_PHYS); /* Delete cache entry */
-    return -2;
+  if( stat(path, &st) ){ 
+    if (errno != ENOENT){ D("stat(%s) failed", path); }
+    return false;
   }
 
   /* Check if path is a directory and is -rwx  */
-  if( !S_ISDIR(st.st_mode) ){
-    D("%s is not a directory", *path);
-    nftw(*path, delete_cache, 1, FTW_PHYS); /* Delete cache entry */
-    return -2;
-  }
-  if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){
-    D("%s is not 700", *path);
-    nftw(*path, delete_cache, 1, FTW_DEPTH | FTW_PHYS); /* Delete cache entry */
-    return -2;
-  }
+  if( !S_ISDIR(st.st_mode) ){ D("%s is not a directory", path); return false; }
+  if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){ D("%s is not 700", path); return false; }
 
-  D("%s is a dir and 700", *path);
-  return 0;
+  D("%s is a dir and 700", path);
+  return true;
 }
 
 
 /*
  * 'convert' to struct passwd
  */
-enum nss_status
-backend_convert(const char* username, struct passwd *result, char **buffer, size_t *buflen, int *errnop)
+int
+backend_convert(const char* username, struct passwd *result, char* buffer, size_t buflen)
 {
+  D("Backend convert for %s", username);
+  char* path = strjoina(options->cache_dir, "/", username);
+  D("Cache entry for %s: %s", username, path);
 
-  const char* path = NULL;
-  switch( cache_hit(username, &path, buffer, buflen) ){
-  case -1: 
-    *errnop = ERANGE;
-    return NSS_STATUS_TRYAGAIN;
-    break;
-  case -2:
-    D("User not found in cache");
-    return NSS_STATUS_NOTFOUND;
-    break;
-  default:
-    break;
-  }
+  if( !cache_hit(path) ){ /* cache_miss */ return 1; }
 
   /* ok, cache found */
   D("Convert to passwd struct (%s)", path);
 
-  result->pw_name = *buffer;
-  if(_copy2buffer(username, buffer, buflen)) { *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+  if( copy2buffer(username, &(result->pw_name), &buffer, &buflen) < 0 ) { return -1; }
 
-  result->pw_passwd = *buffer;
-  if(_copy2buffer("x", buffer, buflen)) { *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+  if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ) { return -1; }
 
-  result->pw_gecos = *buffer;
-  if(_copy2buffer(options->ega_gecos, buffer, buflen)) { *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+  if( copy2buffer(options->ega_gecos, &(result->pw_gecos), &buffer, &buflen) < 0 ) { return -1; }
 
-  result->pw_shell = *buffer;
-  if(_copy2buffer(options->ega_shell, buffer, buflen)) { *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+  if( copy2buffer(options->ega_shell, &(result->pw_shell), &buffer, &buflen) < 0 ) { return -1; }
 
   result->pw_uid = options->ega_uid;
   result->pw_gid = options->ega_gid;
 
   /* For the homedir: ega_fuse_dir/username */
-  result->pw_dir = *buffer;
-  if(_copy2buffer(options->ega_fuse_dir, buffer, buflen)) { *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
-  *(*buffer-1) = '/'; /* backtrack one char */
-  if(_copy2buffer(username, buffer, buflen)) { *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+  if( copy2buffer(options->ega_fuse_dir, &(result->pw_dir), &buffer, &buflen) < 0 ) { return -1; }
+  *(buffer-1) = '/'; /* backtrack one char */
+  if( copy2buffer(username, NULL, &buffer, &buflen) < 0) { return -1; }
 
   D("Found: %s", username);
-  return NSS_STATUS_SUCCESS;
-}
-
-/*
- * refresh the user last accessed date
- */
-int
-backend_refresh_user(const char* username)
-{
-  D("Not implemented");
-  return PAM_SUCCESS;
-  /* int status = PAM_SESSION_ERR; */
-
-  /* if(!backend_open(0)) return PAM_SESSION_ERR; */
-
-  /* D("Refreshing user %s", username); */
-  /* status = PAM_SUCCESS; */
-  /* backend_close(); */
-  /* return status; */
-}
-
-/*
- * Has the account expired
- */
-int
-backend_account_valid(const char* username)
-{
-  D("Not implemented");
-  return PAM_SUCCESS;
-
-  /* int status = PAM_PERM_DENIED; */
-  /* const char* params[1] = { username }; */
-  /* PGresult *res; */
-
-  /* if(!backend_open(0)) return PAM_PERM_DENIED; */
-
-  /* D("Prepared Statement: %s with %s", options->get_account, username); */
-  /* res = PQexecParams(conn, options->get_account, 1, NULL, params, NULL, NULL, 0); */
-
-  /* /\* Check answer *\/ */
-  /* status = (PQresultStatus(res) == PGRES_TUPLES_OK)?PAM_SUCCESS:PAM_ACCT_EXPIRED; */
-
-  /* backend_close(); */
-  /* return status; */
-}
-
-/* Assumes backend is open */
-int
-backend_add_user(const char* username, const char* pwdh, const char* pubkey,
-		 char **buffer, size_t *buflen)
-{
-  int rc = 0;
-  const char* userdir = NULL;
-
-  D("pwdh: '%s'", pwdh);
-  D("pbk: '%s'", pubkey);
-
-  if( !(rc = cache_hit(username, &userdir, buffer, buflen)) ){ return rc; }
-
-  /* Create the new directory */
-  if (mkdir(userdir, 0700)){
-    D("unable to mkdir 700 %s [%s]", userdir, strerror(errno));
-    return false;
-  }
-
-  if( (rc = store_file(username, PASSWORD, pwdh, buffer, buflen)) < 0){ D("Problem storing password hash for user %s", username); return rc; }
-  if( (rc = store_file(username, PUBKEY, pubkey, buffer, buflen)) < 0){ D("Problem storing public key for user %s", username); return rc; }
-
   return 0;
 }

@@ -7,7 +7,9 @@
 #include <signal.h>
 #include <errno.h>
 #include <unistd.h>
-#include <libgen.h>
+#include <libgen.h> /* for basename */
+#include <crypt.h>
+#include <time.h>
 
 #define PAM_SM_AUTH
 #define PAM_SM_ACCT
@@ -17,26 +19,21 @@
 #include <security/pam_ext.h>
 #include <security/pam_modutil.h>
 
-#include <crypt.h>
-#include "blowfish/ow-crypt.h"
-
-#include "debug.h"
+#include "utils.h"
 #include "config.h"
 #include "backend.h"
+#include "blowfish/ow-crypt.h"
 
 #define PAM_OPT_DEBUG			0x01
 #define PAM_OPT_USE_FIRST_PASS		0x02
 #define	PAM_OPT_TRY_FIRST_PASS		0x04
 #define	PAM_OPT_ECHO_PASS		0x08
 
-
 /*
  * Fetch module options
  */
 void pam_options(int *flags, char **config_file, int argc, const char **argv)
 {
-
-  *config_file = CFGFILE; /* default */
   char** args = (char**)argv;
   /* Step through module arguments */
   for (; argc-- > 0; ++args){
@@ -59,64 +56,11 @@ void pam_options(int *flags, char **config_file, int argc, const char **argv)
   return;
 }
 
-static bool
-_authenticate(const char *username, const char *password)
-{
-  int rc = 1;
-  char* pwdh = NULL;
-
-  size_t storage_size = STORAGE_SIZE;
-  char* storage = (char*)malloc( storage_size * sizeof(char) );
-  size_t buflen;
-  char* buffer;
-
-  if(!storage){ D("Could not allocate a buffer of size %zd", storage_size); rc = -2; goto BAILOUT; }
-
-  if(!backend_open(0)) return false;
-
-INIT:
-  buflen = storage_size;
-  buffer = storage; /* copy */
-
-  switch( backend_get_item(username, PASSWORD, &pwdh, &buffer, &buflen)) {
-  case -1:
-    D("Resizing to %zd", storage_size);
-    storage_size *= 2;
-    D("Resizing to %zd", storage_size);
-    if(!realloc(storage, storage_size * sizeof(char))){ D("Could not resize the internal storage"); return false; }
-    goto INIT;
-    break;
-  case -2:
-    D("Error with password_hash file for user %s", username);
-    goto BAILOUT;
-    break;
-  default:
-    if(!pwdh){ D("could not load the password_hash for user %s", username); goto BAILOUT; }
-    break;
-  }
-
-  // all good
-
-  if(!strncmp(pwdh, "$2", 2)){
-    D("Using Blowfish");
-    char pwdh_computed[64];
-    if( crypt_rn(password, pwdh, pwdh_computed, 64) == NULL){ D("bcrypt failed"); rc = 1; goto BAILOUT; }
-    if(!strcmp(pwdh, (char*)&pwdh_computed[0])){ rc = 0; }
-  } else {
-    D("Using libc: supporting MD5, SHA256, SHA512");
-    if (!strcmp(pwdh, crypt(password, pwdh)))
-      rc = 0;
-  }
-
-BAILOUT:
-  backend_close();
-  if(storage) free(storage);
-  return rc == 0;
-}
-
 /*
  * authenticate user
  */
+DECLARE_CLEANUP(pwdh);
+
 PAM_EXTERN int
 pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
@@ -127,10 +71,10 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   struct pam_message msg;
   const struct pam_message *msgs[1];
   struct pam_response *resp;
-  char* config_file = NULL;
+  _cleanup_conf_ char* config_file = NULL;
   int mflags = 0;
   
-  D("called");
+  D("Getting auth PAM module options");
 
   user = NULL; password = NULL; rhost = NULL;
 
@@ -146,6 +90,8 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   } else {
     D("EGA: attempting to authenticate: %s", user);
   }
+
+  pam_options(&mflags, &config_file, argc, argv);
 
   /* Grab the already-entered password if we might want to use it. */
   if (mflags & (PAM_OPT_TRY_FIRST_PASS | PAM_OPT_USE_FIRST_PASS)){
@@ -163,11 +109,9 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
     return PAM_AUTH_ERR;
   }
 
-  pam_options(&mflags, &config_file, argc, argv);
-  if(!readconfig(config_file)){
-    D("Can't read config");
-    return PAM_AUTH_ERR;
-  }
+  _cleanup_str_(pwdh) char* pwdh = NULL;
+  if(!config_file){ config_file = CFGFILE; /* default */ }
+  if(!loadconfig(config_file)){ D("Can't read config"); return PAM_AUTH_ERR; }
 
   D("Asking %s for password", user);
 
@@ -214,38 +158,60 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   if ((!password || !*password) && (flags & PAM_DISALLOW_NULL_AUTHTOK)) { return PAM_AUTH_ERR; }
   
   /* Now, we have the password */
-  if(_authenticate(user, password)){
-    if(rhost){
-      SYSLOG("EGA: user %s authenticated (from %s)", user, rhost);
-    } else {
-      SYSLOG("EGA: user %s authenticated", user);
-    }
-    return PAM_SUCCESS;
+  D("Authenticating user %s with password", user);
+
+  rc = backend_get_item(user, PASSWORD, &pwdh);
+
+  if(!pwdh || rc < 0){ D("could not load the last_accessed time for user %s", user); return PAM_AUTH_ERR; }
+
+  if(!strncmp(pwdh, "$2", 2)){
+    D("Using Blowfish");
+    char pwdh_computed[64];
+    if( crypt_rn(password, pwdh, pwdh_computed, 64) == NULL){ D("bcrypt failed"); return PAM_AUTH_ERR; }
+    if(!strcmp(pwdh, (char*)&pwdh_computed[0])) { return PAM_SUCCESS; }
+  } else {
+    D("Using libc: supporting MD5, SHA256, SHA512");
+    if (!strcmp(pwdh, crypt(password, pwdh))){ return PAM_SUCCESS; }
   }
 
+  SYSLOG("EGA: authentication failed for %s", user);
   return PAM_AUTH_ERR;
 }
 
 PAM_EXTERN int
 pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
+  D("------------- setcred -------------");
   return PAM_SUCCESS;
 }
 
 /*
  * Check if account has expired
  */
+DECLARE_CLEANUP(last);
+
 PAM_EXTERN int
 pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
-  const char *user;
-  int rc;
+  int rc = PAM_PERM_DENIED;
+  const char *username;
+  _cleanup_conf_ char* config_file = NULL;
+  int mflags = 0;
 
-  D("called");
-  rc = pam_get_user(pamh, &user, NULL);
-  if ( rc != PAM_SUCCESS) { D("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+  D("Getting account PAM module options");
+  pam_options(&mflags, &config_file, argc, argv);
 
-  return backend_account_valid(user);
+  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+
+  D("Checking account validity for user %s", username);
+  _cleanup_str_(last) char* last_accessed = NULL;
+  if(!config_file){ config_file = CFGFILE; /* default */ }
+  if(!loadconfig(config_file)){ D("Can't read config"); return PAM_ABORT; }
+
+  rc = backend_get_item(username, LAST_ACCESSED, &last_accessed);
+  if(!last_accessed || rc < 0){ D("could not load the last_accessed time for user %s", username); return PAM_ACCT_EXPIRED; }
+
+  return ( difftime(time(NULL), ((time_t)strtol(last_accessed, NULL, 10))) > EGA_ACCOUNT_EXPIRATION )?PAM_SUCCESS:PAM_ACCT_EXPIRED;
 }
 
 /*
@@ -258,27 +224,19 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   char *mountpoint = NULL, *mount_options = NULL;
   int rc, child;
   struct sigaction newsa, oldsa;
-  bool restore_handler = false;
+  _cleanup_conf_ char* config_file = NULL;
+  int mflags = 0;
 
-  rc = pam_get_user(pamh, &username, NULL);
-  if ( rc != PAM_SUCCESS) { D("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+  pam_options(&mflags, &config_file, argc, argv);
 
-  if(!readconfig(CFGFILE)){ D("Can't read config"); return PAM_SESSION_ERR; }
+  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  int slen_flags = strlen(options->ega_fuse_flags),
-      slen_fuse = strlen(options->ega_fuse_dir),
-      slen_dir  = strlen(options->ega_dir),
-      slen_user = strlen(username);
+  if(!config_file){ config_file = CFGFILE; /* default */ }
+  if(!loadconfig(config_file)){ D("Can't read config"); return PAM_SESSION_ERR; }
 
   /* Construct mountpoint and rootdir_options */
-  mountpoint = (char*)malloc(sizeof(char) * (slen_fuse+slen_user+2));
-  if(!mountpoint) return PAM_ABORT;
-  sprintf(mountpoint, "%s/%s", options->ega_fuse_dir, username);
-
-  mount_options = (char*)malloc(sizeof(char) * (slen_flags+slen_dir+(slen_user*2)+17));
-  if(!mount_options){ rc = PAM_ABORT; goto BAILOUT; }
-  sprintf(mount_options, "%s,rootdir=%s/%s,user=%s", options->ega_fuse_flags, options->ega_dir, username, username);
-
+  mountpoint = strjoina(options->ega_fuse_dir, "/", username);
+  mount_options = strjoina(options->ega_fuse_flags, ",rootdir=", options->ega_dir, "/", username, ",user=", username);
   D("Mounting LegaFS for user %s at %s", username, mountpoint);
 
   /*
@@ -289,11 +247,10 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   memset(&newsa, '\0', sizeof(newsa));
   newsa.sa_handler = SIG_DFL;
   sigaction(SIGCHLD, &newsa, &oldsa);
-  restore_handler = true;
 
   /* fork */
   child = fork();
-  if (child < 0) { D("LegaFS fork failed: %s", strerror(errno)); rc = PAM_ABORT; goto BAILOUT; }
+  if (child < 0) { D("LegaFS fork failed: %s", strerror(errno)); return PAM_ABORT; }
 
   if (child == 0) {
      /* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) */
@@ -303,35 +260,46 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
     execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", mount_options, (char*)NULL);
     /* should not get here: exit with error */
     D("LegaFS is not available");
-    if(mountpoint) free(mountpoint);
-    if(mount_options) free(mount_options);
-    exit(errno);
+    cleanconfig();
+    _exit(errno);
   }
 
   /* Child > 0 */
-  if(waitpid(child, &rc, 0) < 0) { D("waitpid failed [%d]: %s", rc, strerror(errno)); rc = PAM_ABORT; goto BAILOUT; }
-  if (!WIFEXITED(rc) || errno == EINTR) { D("Error occured while mounting a LegaFS: %s", strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
+  if(waitpid(child, &rc, 0) < 0) { D("waitpid failed [%d]: %s", rc, strerror(errno)); return PAM_ABORT; }
+  if (!WIFEXITED(rc) || errno == EINTR) { D("Error occured while mounting a LegaFS: %s", strerror(errno)); return PAM_SESSION_ERR; }
+
+  sigaction(SIGCHLD, &oldsa, NULL);
 
   rc = WEXITSTATUS(rc);
-  if(rc) { D("Unable to mount LegaFS [Exit %d]", rc); rc = PAM_SESSION_ERR; goto BAILOUT; }
+  if(rc) { D("Unable to mount LegaFS [Exit %d]", rc); return PAM_SESSION_ERR; }
 
   D("Chrooting to %s", mountpoint);
-  if (chdir(mountpoint)) { D("Unable to chdir to %s: %s", mountpoint, strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
-  if (chroot(mountpoint)){ D("Unable to chroot(%s): %s", mountpoint, strerror(errno)); rc = PAM_SESSION_ERR; goto BAILOUT; }
+  if (chdir(mountpoint)) { D("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
+  if (chroot(mountpoint)){ D("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
 
   D("Session open: Success");
-  rc = PAM_SUCCESS;
-
-BAILOUT:
-  if(restore_handler) sigaction(SIGCHLD, &oldsa, NULL);
-  if(mountpoint) free(mountpoint);
-  if(mount_options) free(mount_options);
-  return rc;
+  return PAM_SUCCESS;
 }
 
 PAM_EXTERN int
 pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
-  D("Session close: Success");
-  return PAM_SUCCESS;
+  int rc = PAM_SESSION_ERR;
+  const char *username;
+  _cleanup_conf_ char* config_file = NULL;
+  int mflags = 0;
+
+  D("called");
+  pam_options(&mflags, &config_file, argc, argv);
+
+  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+
+  if(!config_file){ config_file = CFGFILE; /* default */ }
+  if(!loadconfig(config_file)){ D("Can't read config"); return PAM_SESSION_ERR; }
+
+  D("Refreshing user %s", username);
+
+  char seconds[65];
+  sprintf(seconds, "%ld", time(NULL));
+  return (backend_set_item(username, LAST_ACCESSED, seconds) > 0)?PAM_SUCCESS:PAM_SESSION_ERR;
 }

@@ -2,11 +2,12 @@
 #include <pwd.h>
 #include <string.h>
 
-#include "debug.h"
+#include "utils.h"
 #include "config.h"
 #include "backend.h"
 #include "cega.h"
 #include "homedir.h"
+
 
 /*
  * passwd functions
@@ -14,23 +15,18 @@
 enum nss_status
 _nss_ega_setpwent (int stayopen)
 {
-  enum nss_status status = NSS_STATUS_UNAVAIL;
+  D("stayopen: %d", stayopen);
 
-  D("called with args (stayopen: %d)", stayopen);
-  
-  if(backend_open(stayopen)) {
-    status = NSS_STATUS_SUCCESS;
-  }
+  if(!loadconfig(CFGFILE)){ D("Can't read config"); return NSS_STATUS_UNAVAIL; }
 
-  /* if(!stayopen) backend_close(); */
-  return status;
+  return NSS_STATUS_SUCCESS;
 }
 
 enum nss_status
 _nss_ega_endpwent(void)
 {
-  D("called");
-  backend_close();
+  D("success");
+  cleanconfig();
   return NSS_STATUS_SUCCESS;
 }
 
@@ -50,41 +46,48 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
 		    char *buffer, size_t buflen, int *errnop)
 {
   /* bail out if we're looking for the root user */
-  if( !strcmp(username, "root") ){ D("bail out when root"); return NSS_STATUS_NOTFOUND; }
-  if( !strcmp(username, "ega")  ){ D("bail out when ega");  return NSS_STATUS_NOTFOUND; }
+  /* if( !strcmp(username, "root") ){ D("bail out when root"); return NSS_STATUS_NOTFOUND; } */
+  /* if( !strcmp(username, "ega")  ){ D("bail out when ega");  return NSS_STATUS_NOTFOUND; } */
 
   D("called with username: %s and initial buffer size: %zd", username, buflen);
 
-  enum nss_status status = NSS_STATUS_NOTFOUND;
+  _cleanup_conf_ char* config_file = CFGFILE;
+  if(!loadconfig(config_file)){ D("Can't read config"); return NSS_STATUS_UNAVAIL; }
 
-  if(!backend_open(0)) return NSS_STATUS_UNAVAIL;
-
-  status = backend_convert(username, result, &buffer, &buflen, errnop);
-  if (status == NSS_STATUS_SUCCESS) return status;
-
-  /* OK, User not found in Cache */
+  switch(backend_convert(username, result, buffer, buflen)){
+  case -1:
+    *errnop = ERANGE; return NSS_STATUS_TRYAGAIN;
+    break;
+  case 0: /* User found in cache */
+    *errnop = 0; return NSS_STATUS_SUCCESS; 
+    break; 
+  default: /* User not found in cache */
+    D("User not found in cache");
+    break; 
+  }
 
   /* if CEGA disabled */
-  if(!options->with_cega){
-    D("Contacting cega for user %s is disabled", username);
-    return NSS_STATUS_NOTFOUND;
-  }
+  if(!options->with_cega){ D("Contacting cega for user %s is disabled", username); return NSS_STATUS_NOTFOUND; }
     
-  int rc = fetch_from_cega(username, &buffer, &buflen, errnop);
+  if( !fetch_from_cega(username) ){ D("Could not fetch user from CentralEGA"); return NSS_STATUS_NOTFOUND; }
 
-  if( rc == -1){ *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
-  if( rc ){ D("Fetch CEGA error: %d", rc); return NSS_STATUS_NOTFOUND; }
+  D("Trying cache again");
 
-  /* User retrieved from Central EGA, try again the DB */
-  status = backend_convert(username, result, &buffer, &buflen, errnop);
-  if (status == NSS_STATUS_SUCCESS){
-    create_ega_dir(options->ega_dir, username, result->pw_uid, result->pw_gid, options->ega_dir_attrs); /* In that case, create the homedir */
-    return status;
+  /* User retrieved from Central EGA, try again the cache */
+  switch(backend_convert(username, result, buffer, buflen)){
+  case -1:
+    *errnop = ERANGE;
+    return NSS_STATUS_TRYAGAIN;
+    break;
+  case 0:
+    *errnop = 0;
+    return create_ega_dir(options->ega_dir, username, result->pw_uid, result->pw_gid, options->ega_dir_attrs)?NSS_STATUS_SUCCESS:NSS_STATUS_NOTFOUND;
+    break;
+  default:
+    D("No luck, user %s not found", username);
+    return NSS_STATUS_NOTFOUND;
+    break;
   }
-
-  D("No luck, user %s not found", username);
-  /* No luck, user not found */
-  return NSS_STATUS_NOTFOUND;
 }
 
 /*
