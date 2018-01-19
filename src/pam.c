@@ -17,10 +17,12 @@
 #include <security/pam_ext.h>
 #include <security/pam_modutil.h>
 
+#include <crypt.h>
+#include "blowfish/ow-crypt.h"
+
 #include "debug.h"
 #include "config.h"
 #include "backend.h"
-#include "homedir.h"
 
 #define PAM_OPT_DEBUG			0x01
 #define PAM_OPT_USE_FIRST_PASS		0x02
@@ -55,6 +57,61 @@ void pam_options(int *flags, char **config_file, int argc, const char **argv)
     }
   }
   return;
+}
+
+static bool
+_authenticate(const char *username, const char *password)
+{
+  int rc = 1;
+  char* pwdh = NULL;
+
+  size_t storage_size = STORAGE_SIZE;
+  char* storage = (char*)malloc( storage_size * sizeof(char) );
+  size_t buflen;
+  char* buffer;
+
+  if(!storage){ D("Could not allocate a buffer of size %zd", storage_size); rc = -2; goto BAILOUT; }
+
+  if(!backend_open(0)) return false;
+
+INIT:
+  buflen = storage_size;
+  buffer = storage; /* copy */
+
+  switch( backend_get_item(username, PASSWORD, &pwdh, &buffer, &buflen)) {
+  case -1:
+    D("Resizing to %zd", storage_size);
+    storage_size *= 2;
+    D("Resizing to %zd", storage_size);
+    if(!realloc(storage, storage_size * sizeof(char))){ D("Could not resize the internal storage"); return false; }
+    goto INIT;
+    break;
+  case -2:
+    D("Error with password_hash file for user %s", username);
+    goto BAILOUT;
+    break;
+  default:
+    if(!pwdh){ D("could not load the password_hash for user %s", username); goto BAILOUT; }
+    break;
+  }
+
+  // all good
+
+  if(!strncmp(pwdh, "$2", 2)){
+    D("Using Blowfish");
+    char pwdh_computed[64];
+    if( crypt_rn(password, pwdh, pwdh_computed, 64) == NULL){ D("bcrypt failed"); rc = 1; goto BAILOUT; }
+    if(!strcmp(pwdh, (char*)&pwdh_computed[0])){ rc = 0; }
+  } else {
+    D("Using libc: supporting MD5, SHA256, SHA512");
+    if (!strcmp(pwdh, crypt(password, pwdh)))
+      rc = 0;
+  }
+
+BAILOUT:
+  backend_close();
+  if(storage) free(storage);
+  return rc == 0;
 }
 
 /*
@@ -157,7 +214,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   if ((!password || !*password) && (flags & PAM_DISALLOW_NULL_AUTHTOK)) { return PAM_AUTH_ERR; }
   
   /* Now, we have the password */
-  if(backend_authenticate(user, password)){
+  if(_authenticate(user, password)){
     if(rhost){
       SYSLOG("EGA: user %s authenticated (from %s)", user, rhost);
     } else {
@@ -242,7 +299,6 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
      /* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) */
      /*   _exit(PAM_SESSION_ERR); */
 
-    /* exec the mkhomedir helper */
     D("Executing: %s %s -o %s", options->ega_fuse_exec, mountpoint, mount_options);
     execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", mount_options, (char*)NULL);
     /* should not get here: exit with error */

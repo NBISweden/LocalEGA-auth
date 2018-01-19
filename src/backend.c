@@ -3,17 +3,15 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#include <crypt.h>
 #include <sys/stat.h>
 #include <ftw.h>
 #include <unistd.h>
+#include <security/pam_appl.h>
 
 #include "debug.h"
 #include "config.h"
 #include "backend.h"
-#include "cega.h"
-#include "homedir.h"
-#include "blowfish/ow-crypt.h"
+
 
 
 bool
@@ -67,7 +65,6 @@ static int
 name2path(const char* username, const char* item, const char** path, char **bufptr, size_t *buflen){
   int rc = 0;
 
-  D("user: %s, item: %s", username, item);
   *path = *bufptr; /* record start */
   
   if( (rc = _copy2buffer(options->cache_dir, bufptr, buflen)) ) { return rc; }
@@ -82,8 +79,8 @@ name2path(const char* username, const char* item, const char** path, char **bufp
   return 0;
 }
 
-static int
-load_file(const char* username, const char* item, char** content, char** bufptr, size_t* buflen){
+int
+backend_get_item(const char* username, const char* item, char** content, char** bufptr, size_t* buflen){
 
   long length;
   FILE* f = NULL;
@@ -93,6 +90,8 @@ load_file(const char* username, const char* item, char** content, char** bufptr,
   D("Loading %s file for user %s", item, username);
 
   if( (rc = name2path(username, item, &path, bufptr, buflen)) ){ return rc; }
+
+  D("Loading %s", path);
 
   f = fopen (path, "rb");
   if(!f){ D("Could not open file: %s", path); return -2; }
@@ -134,7 +133,7 @@ store_file(const char* username, const char* item, const char* content, char** b
   rc = fwrite(content, sizeof(char), strlen(content), f);
 
   fclose (f);
-  return rc;
+  return rc + 1;
 }
 
 static int
@@ -183,8 +182,8 @@ cache_hit(const char* username, const char** path, char **buffer, size_t *buflen
 /*
  * 'convert' to struct passwd
  */
-static enum nss_status
-_get(const char* username, struct passwd *result, char **buffer, size_t *buflen, int *errnop)
+enum nss_status
+backend_convert(const char* username, struct passwd *result, char **buffer, size_t *buflen, int *errnop)
 {
 
   const char* path = NULL;
@@ -280,8 +279,8 @@ backend_add_user(const char* username, const char* pwdh, const char* pubkey,
   int rc = 0;
   const char* userdir = NULL;
 
-  D("pwdh: %s", pwdh);
-  D("pbk: %s", pubkey);
+  D("pwdh: '%s'", pwdh);
+  D("pbk: '%s'", pubkey);
 
   if( !(rc = cache_hit(username, &userdir, buffer, buflen)) ){ return rc; }
 
@@ -295,102 +294,4 @@ backend_add_user(const char* username, const char* pwdh, const char* pubkey,
   if( (rc = store_file(username, PUBKEY, pubkey, buffer, buflen)) < 0){ D("Problem storing public key for user %s", username); return rc; }
 
   return 0;
-}
-
-
-/*
- * Get one entry from the Postgres result
- * or contact CentralEGA and retry.
- */
-enum nss_status
-backend_get_userentry(const char *username, struct passwd *result,
-		      char **buffer, size_t *buflen, int *errnop)
-{
-  D("called");
-  enum nss_status status = NSS_STATUS_NOTFOUND;
-
-  if(!backend_open(0)) return NSS_STATUS_UNAVAIL;
-
-  status = _get(username, result, buffer, buflen, errnop);
-  if (status == NSS_STATUS_SUCCESS) return status;
-
-  /* OK, User not found in Cache */
-
-  /* if CEGA disabled */
-  if(!options->with_cega){
-    D("Contacting cega for user %s is disabled", username);
-    return NSS_STATUS_NOTFOUND;
-  }
-    
-  int rc = fetch_from_cega(username, buffer, buflen, errnop);
-
-  if( rc == -1){ *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
-  if( rc ){ D("Fetch CEGA error: %d", rc); return NSS_STATUS_NOTFOUND; }
-
-  /* User retrieved from Central EGA, try again the DB */
-  status = _get(username, result, buffer, buflen, errnop);
-  if (status == NSS_STATUS_SUCCESS){
-    create_ega_dir(options->ega_dir, username, result->pw_uid, result->pw_gid, options->ega_dir_attrs); /* In that case, create the homedir */
-    return status;
-  }
-
-  D("No luck, user %s not found", username);
-  /* No luck, user not found */
-  return NSS_STATUS_NOTFOUND;
-}
-
-
-bool
-backend_authenticate(const char *username, const char *password)
-{
-  int rc = 1;
-  char* pwdh = NULL;
-
-  size_t storage_size = STORAGE_SIZE;
-  char* storage = (char*)malloc( storage_size * sizeof(char) );
-  size_t buflen;
-  char* buffer;
-
-  if(!storage){ D("Could not allocate a buffer of size %zd", storage_size); rc = -2; goto BAILOUT; }
-
-  if(!backend_open(0)) return false;
-
-INIT:
-  buflen = storage_size;
-  buffer = storage; /* copy */
-
-  switch( load_file(username, PASSWORD, &pwdh, &buffer, &buflen)) {
-  case -1:
-    D("Resizing to %zd", storage_size);
-    storage_size *= 2;
-    D("Resizing to %zd", storage_size);
-    if(!realloc(storage, storage_size * sizeof(char))){ D("Could not resize the internal storage"); return false; }
-    goto INIT;
-    break;
-  case -2:
-    D("Error with password_hash file for user %s", username);
-    goto BAILOUT;
-    break;
-  default:
-    if(!pwdh){ D("could not load the password_hash for user %s", username); goto BAILOUT; }
-    break;
-  }
-
-  // all good
-
-  if(!strncmp(pwdh, "$2", 2)){
-    D("Using Blowfish");
-    char pwdh_computed[64];
-    if( crypt_rn(password, pwdh, pwdh_computed, 64) == NULL){ D("bcrypt failed"); rc = 1; goto BAILOUT; }
-    if(!strcmp(pwdh, (char*)&pwdh_computed[0])){ rc = 0; }
-  } else {
-    D("Using libc: supporting MD5, SHA256, SHA512");
-    if (!strcmp(pwdh, crypt(password, pwdh)))
-      rc = 0;
-  }
-
-BAILOUT:
-  backend_close();
-  if(storage) free(storage);
-  return rc == 0;
 }

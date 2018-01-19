@@ -2,6 +2,7 @@
 #define __LEGA_CONFIG_H_INCLUDED__
 
 #include <stdbool.h>
+#include <sys/types.h> 
 
 #define CFGFILE "/etc/ega/auth.conf"
 #define ENABLE_CEGA false

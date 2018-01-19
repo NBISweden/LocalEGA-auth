@@ -4,20 +4,22 @@
 #include <stdbool.h>
 #include <nss.h>
 #include <pwd.h>
-#include <security/pam_appl.h>
+#include <errno.h>
 
 bool backend_open(int stayopen);
 
 void backend_close(void);
-
-enum nss_status backend_get_userentry(const char *name, struct passwd *result,
-				      char** buffer, size_t* buflen, int* errnop);
 
 int backend_add_user(const char* username, const char* pwdh, const char* pubkey,
 		      char **buffer, size_t *buflen);
 
 int backend_account_valid(const char* username);
 int backend_refresh_user(const char* username);
-bool backend_authenticate(const char *username, const char *pwd);
+
+enum nss_status backend_convert(const char* username, struct passwd *result,
+				char **buffer, size_t *buflen, int *errnop);
+
+int backend_get_item(const char* username, const char* item,
+		     char** content, char** bufptr, size_t* buflen);
 
 #endif /* !__LEGA_BACKEND_H_INCLUDED__ */
