@@ -154,22 +154,35 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   return PAM_AUTH_ERR;
 }
 
+/*
+ * Refresh user cache entry, if it exists
+ * Note: setcred runs before and after session_open
+ * which means, 'after' is in a chrooted-env, so setcred fails
+ * (but before succeeds)
+ * So a user is refreshed right before an attempts to open a session,
+ * right after a successful authentication
+ */
 PAM_EXTERN int
 pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
-  return PAM_SUCCESS;
-  /* int rc = PAM_USER_UNKNOWN; */
-  /* const char *username; */
-  /* int mflags = 0; */
+  int rc;
+  const char *username;
+  int mflags = 0;
 
-  /* D1("Getting setcred PAM module options"); */
-  /* pam_options(&mflags, argc, argv); */
+  D1("Getting setcred PAM module options");
+  pam_options(&mflags, argc, argv);
 
-  /* if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; } */
+  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  /* if( config_not_loaded() ) return PAM_CRED_UNAVAIL; */
+  if( config_not_loaded() ) return PAM_CRED_UNAVAIL;
 
-  /* return backend_user_found(username)?PAM_SUCCESS:PAM_USER_UNKNOWN; */
+  if( !backend_user_found(username) ){ D1("'%s' not found", username); return PAM_USER_UNKNOWN; }
+
+  D1("Refreshing user %s", username);
+
+  char seconds[65];
+  sprintf(seconds, "%ld", time(NULL));
+  return (backend_set_item(username, LAST_ACCESSED, seconds) < 0)?PAM_CRED_EXPIRED:PAM_SUCCESS;
 }
 
 /*
@@ -198,7 +211,7 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
 }
 
 /*
- * Refresh user in DB, Mount LegaFS, and Chroot to homedir
+ * Mount LegaFS, and Chroot to homedir
  */
 PAM_EXTERN int
 pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
@@ -261,25 +274,13 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   return PAM_SUCCESS;
 }
 
+/*
+ * Returning success because we are in the chrooted env
+ * so no path to the user's cache entry
+ */
 PAM_EXTERN int
 pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
-  int rc = PAM_SESSION_ERR;
-  const char *username;
-  int mflags = 0;
-
-  D1("Getting close session PAM module options");
-  pam_options(&mflags, argc, argv);
-
-  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
-
-  if( config_not_loaded() ) return PAM_SESSION_ERR;
-
-  D1("Refreshing user %s", username);
-
-  char seconds[65];
-  sprintf(seconds, "%ld", time(NULL));
-  rc = (backend_set_item(username, LAST_ACCESSED, seconds) < 0)?PAM_SESSION_ERR:PAM_SUCCESS;
-  D1("Session close: %s",(rc == PAM_SUCCESS)?"success":"fail");
-  return rc;
+  D1("Session close: Success");
+  return PAM_SUCCESS;
 }

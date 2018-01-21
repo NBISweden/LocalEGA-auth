@@ -46,12 +46,11 @@ get_from_json(jq_state *jq, const char* query, jv json){
 
   jq_start(jq, json, 0); // no flags
   jv result = jq_next(jq);
-  if(jv_is_valid(result)){
+  if(jv_is_valid(result)){ // no consume
 
-    if (jv_get_kind(result) == JV_KIND_STRING) {
-      res = jv_string_value(result);
+    if (jv_get_kind(result) == JV_KIND_STRING) { // no consume
+      res = jv_string_value(result); // consumed
       D3("Valid result: %s", res);
-      jv_free(result);
     } else {
       D3("Valid result but not a string");
       //jv_dump(result, 0);
