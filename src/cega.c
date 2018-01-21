@@ -48,7 +48,7 @@ get_from_json(jq_state *jq, const char* query, jv json, const char** res){
 
     if (jv_get_kind(result) == JV_KIND_STRING) { // no consume
       *res = jv_string_value(result); // consumed
-      D3("Valid result: %s", res);
+      D3("Valid result: %s", *res);
     } else {
       D3("Valid result but not a string");
       //jv_dump(result, 0);

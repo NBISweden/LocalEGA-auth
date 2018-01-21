@@ -1,28 +1,29 @@
-debug = ok_why_not
-
 ##################
 # Central EGA
+#
+# The username will be appended to the endpoint
+# eg the endpoint for 'john' will be 
+# http://cega_users/user/john
 ##################
 
 enable_cega = yes
 cega_endpoint = http://cega_users/user/
-cega_user = lega
-cega_password = change_me
-cega_resp_passwd = .password
-cega_resp_pubkey = .public_key
+cega_creds = user:password
+cega_json_passwd = .password
+cega_json_pubkey = .public_key
 
 ##################
 # NSS & PAM
 ##################
 
-# expiration = 100
+# expiration = 36000.0
 # prompt = Knock Knock:
 # cache_dir = /ega/cache
+# ega_gecos = EGA User
+# ega_shell = /sbin/nologin
 
 ega_uid = 1000
 ega_gid = 1000
-ega_gecos = EGA User
-ega_shell = /sbin/nologin
 
 ega_dir = /ega/inbox
 ega_dir_attrs = 2750 # rwxr-s---
@@ -31,5 +32,7 @@ ega_dir_attrs = 2750 # rwxr-s---
 # FUSE mount
 ##################
 ega_fuse_dir = /lega
+# /username will be appended.
+# Example: for user 'john', the mountpoint will be /lega/john
 ega_fuse_exec = /usr/bin/ega-fs
 ega_fuse_flags = nodev,noexec,uid=1000,gid=1000,suid
