@@ -35,21 +35,19 @@ curl_callback (void* contents, size_t size, size_t nmemb, void* userdata) {
   return realsize;
 }
 
-static const char*
-get_from_json(jq_state *jq, const char* query, jv json){
+static int
+get_from_json(jq_state *jq, const char* query, jv json, const char** res){
   
-  const char* res = NULL;
-
   D3("Processing query: %s", query);
 
-  if (!jq_compile(jq, query)){ D3("Invalid query"); return NULL; }
+  if (!jq_compile(jq, query)){ D3("Invalid query"); return 1; }
 
   jq_start(jq, json, 0); // no flags
   jv result = jq_next(jq);
   if(jv_is_valid(result)){ // no consume
 
     if (jv_get_kind(result) == JV_KIND_STRING) { // no consume
-      res = jv_string_value(result); // consumed
+      *res = jv_string_value(result); // consumed
       D3("Valid result: %s", res);
     } else {
       D3("Valid result but not a string");
@@ -57,7 +55,7 @@ get_from_json(jq_state *jq, const char* query, jv json){
       jv_free(result);
     }
   }
-  return res;
+  return 0;
 }
 
 bool
@@ -123,13 +121,20 @@ fetch_from_cega(const char *username)
   jq = jq_init();
   if (jq == NULL) { D2("jq error with malloc"); goto BAILOUT; }
 
-  pwd = get_from_json(jq, options->cega_json_passwd, jv_copy(parsed_response));
-  pbk = get_from_json(jq, options->cega_json_pubkey, jv_copy(parsed_response));
+  int rc = 
+    get_from_json(jq, options->cega_json_passwd, jv_copy(parsed_response), &pwd) +
+    get_from_json(jq, options->cega_json_pubkey, jv_copy(parsed_response), &pbk);
+
+  if(rc){
+    D1("WARNING: CentralEGA JSON received, but parsed with %d invalid quer%s", rc, (rc>1)?"ies":"y");
+  } else {
+    D1("CentralEGA JSON response correctly parsed");
+  }
 
   jv_free(parsed_response);
 
-  /* Adding to the database */
-  status = backend_add_user(username, pwd, pbk);
+  /* Adding to the database, if pwd and pbk are not both null */
+  status = (pwd || pbk) && backend_add_user(username, pwd, pbk);
 
 BAILOUT:
   D1("User %s%s found in CentralEGA", username, (status)?"":" not");

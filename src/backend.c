@@ -67,8 +67,8 @@ bool
 backend_add_user(const char* username, const char* pwdh, const char* pubkey)
 {
   char* userdir = strjoina(options->cache_dir, "/", username);
+  D1("Adding '%s' to cache [%s]", username, userdir);
   /* Create the new directory */
-  D2("Userdir for %s: %s", username, userdir);
   if (mkdir(userdir, 0700)){ D2("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
 
   /* Store the files */
