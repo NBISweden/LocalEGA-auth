@@ -34,8 +34,14 @@ KEYS_OBJECTS = $(KEYS_SOURCES:%.c=%.o)
 
 all: install
 
-debug: CFLAGS += -DDEBUG -g
-debug: install
+debug1: CFLAGS += -DDEBUG=1 -g
+debug1: install
+
+debug2: CFLAGS += -DDEBUG=2 -g
+debug2: install
+
+debug3: CFLAGS += -DDEBUG=3 -g
+debug3: install
 
 $(NSS_LIBRARY): $(HEADERS) $(NSS_OBJECTS)
 	@echo "Linking objects into $@"

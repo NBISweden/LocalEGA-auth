@@ -25,7 +25,7 @@ curl_callback (void* contents, size_t size, size_t nmemb, void* userdata) {
   cres->body = (char *) realloc(cres->body, cres->size + realsize + 1);
 
   /* check buffer */
-  if (cres->body == NULL) { D("ERROR: Failed to expand buffer in curl_callback"); return -1; }
+  if (cres->body == NULL) { D2("ERROR: Failed to expand buffer in curl_callback"); return -1; }
 
   /* copy contents to buffer */
   memcpy(&(cres->body[cres->size]), contents, realsize);
@@ -40,9 +40,9 @@ get_from_json(jq_state *jq, const char* query, jv json){
   
   const char* res = NULL;
 
-  D("Processing query: %s", query);
+  D3("Processing query: %s", query);
 
-  if (!jq_compile(jq, query)){ D("Invalid query"); return NULL; }
+  if (!jq_compile(jq, query)){ D3("Invalid query"); return NULL; }
 
   jq_start(jq, json, 0); // no flags
   jv result = jq_next(jq);
@@ -50,10 +50,10 @@ get_from_json(jq_state *jq, const char* query, jv json){
 
     if (jv_get_kind(result) == JV_KIND_STRING) {
       res = jv_string_value(result);
-      D("Valid result: %s", res);
+      D3("Valid result: %s", res);
       jv_free(result);
     } else {
-      D("Valid result but not a string");
+      D3("Valid result but not a string");
       //jv_dump(result, 0);
       jv_free(result);
     }
@@ -74,21 +74,23 @@ fetch_from_cega(const char *username)
   const char *pwd = NULL;
   const char *pbk = NULL;
 
-  D("Contacting cega for user: %s", username);
+  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return false; }
 
-  if(!options->cega_creds){ D("Empty CEGA credentials"); return 1; /* early quit */ }
+  D1("Contacting cega for user: %s", username);
+
+  if(!options->cega_creds){ D2("Empty CEGA credentials"); return 1; /* early quit */ }
 
   curl_global_init(CURL_GLOBAL_DEFAULT);
   curl = curl_easy_init();
 
-  if(!curl) { D("libcurl init failed"); goto BAILOUT; }
+  if(!curl) { D2("libcurl init failed"); goto BAILOUT; }
 
   /* Formatting the endpoint */
   endpoint = strjoina(options->cega_endpoint, username);
-  D("CEGA endpoint: %s", endpoint);
+  D2("CEGA endpoint: %s", endpoint);
 
   /* Preparing CURL */
-  D("Preparing CURL");
+  D2("Preparing CURL");
   cres = (struct curl_res_s*)malloc(sizeof(struct curl_res_s));
   cres->body = NULL;
   cres->size = 0;
@@ -110,17 +112,17 @@ fetch_from_cega(const char *username)
 
   /* Perform the request, res will get the return code */
   res = curl_easy_perform(curl);
-  D("CEGA Request done");
-  if(res != CURLE_OK){ D("curl_easy_perform() failed: %s", curl_easy_strerror(res)); goto BAILOUT; }
+  D2("CEGA Request done");
+  if(res != CURLE_OK){ D2("curl_easy_perform() failed: %s", curl_easy_strerror(res)); goto BAILOUT; }
 
-  D("Parsing the JSON response");
+  D2("Parsing the JSON response");
   parsed_response = jv_parse(cres->body);
 
-  if (!jv_is_valid(parsed_response)) { D("Invalid response"); goto BAILOUT; }
+  if (!jv_is_valid(parsed_response)) { D2("Invalid response"); goto BAILOUT; }
 
   /* Preparing the queries */
   jq = jq_init();
-  if (jq == NULL) { D("jq error with malloc"); goto BAILOUT; }
+  if (jq == NULL) { D2("jq error with malloc"); goto BAILOUT; }
 
   pwd = get_from_json(jq, options->cega_json_passwd, jv_copy(parsed_response));
   pbk = get_from_json(jq, options->cega_json_pubkey, jv_copy(parsed_response));
@@ -131,7 +133,7 @@ fetch_from_cega(const char *username)
   status = backend_add_user(username, pwd, pbk);
 
 BAILOUT:
-  D("User %s%s found in CentralEGA", username, (status)?"":" not");
+  D1("User %s%s found in CentralEGA", username, (status)?"":" not");
   if(cres)free(cres);
   jq_teardown(&jq); /* should free pwd and pbk */
   curl_easy_cleanup(curl);

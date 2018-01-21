@@ -5,7 +5,7 @@ debug = ok_why_not
 ##################
 
 enable_cega = yes
-cega_endpoint = http://cega_users/user/%s
+cega_endpoint = http://cega_users/user/
 cega_user = lega
 cega_password = change_me
 cega_resp_passwd = .password

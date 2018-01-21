@@ -9,23 +9,19 @@ int
 main(int argc, const char **argv)
 {
   int rc = 0;
-  char* pubkey = NULL;
+  _cleanup_str_ char* pubkey = NULL;
 
   if( argc < 2 ){ fprintf(stderr, "Usage: %s user\n", argv[0]); return 1; }
 
-  D("Reading config file: %s", CFGFILE);
-  if(!loadconfig(CFGFILE)){ D("Can't read config"); rc = 2; goto SKIP; }
+  if( config_not_loaded() ){ D1("Config not loaded"); return 2; }
   
-  D("Fetching the public key of user %s", argv[1]);
+  D1("Fetching the public key of %s", argv[1]);
   rc = backend_get_item(argv[1], PUBKEY, &pubkey);
 
-  if(!pubkey || rc < 0){ rc = 3; goto SKIP; }
+  if(!pubkey || rc < 0){ return 3; }
 
-  rc = !(printf("%s", pubkey) > 0);
-SKIP:
-  cleanconfig();
-  if(pubkey)free(pubkey);
-  return rc;
+  printf("%s", pubkey);
+  return 0;
 }
 
 

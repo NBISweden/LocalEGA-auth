@@ -26,14 +26,14 @@ backend_get_item(const char* username, const char* item, char** content){
   long length;
   _cleanup_file_ FILE* f = NULL;
 
-  D("Loading %s file for user %s", item, username);
+  D2("Loading %s file for user %s", item, username);
 
   char* path = strjoina(options->cache_dir, "/", username, "/", item);
 
-  D("Loading %s", path);
+  D2("Loading %s", path);
 
   f = fopen (path, "rb");
-  if( !f || ferror(f) ){ D("Could not open file: %s", path); return -2; }
+  if( !f || ferror(f) ){ D2("Could not open file: %s", path); return -2; }
 
   /* Get the size */
   fseek (f, 0, SEEK_END);
@@ -50,13 +50,13 @@ backend_set_item(const char* username, const char* item, const char* content){
   _cleanup_file_ FILE* f = NULL;
   char* path = strjoina(options->cache_dir, "/", username, "/", item);
 
-  D("Opening file: %s", path);
+  D2("Opening file: %s", path);
 
   f = fopen (path, "wb");
-  if(!f){ D("Could not open file: %s", path); return -2; }
+  if(!f){ D2("Could not open file: %s", path); return -2; }
   chmod(path, 0600);
 
-  D("Storing data: %s", content);
+  D2("Storing data: %s", content);
   return (fwrite(content, sizeof(char), strlen(content), f) > 0)?0:-2;
 }
 
@@ -68,47 +68,48 @@ backend_add_user(const char* username, const char* pwdh, const char* pubkey)
 {
   char* userdir = strjoina(options->cache_dir, "/", username);
   /* Create the new directory */
-  D("Userdir for %s: %s", username, userdir);
-  if (mkdir(userdir, 0700)){ D("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
+  D2("Userdir for %s: %s", username, userdir);
+  if (mkdir(userdir, 0700)){ D2("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
 
   /* Store the files */
-  int rc;
-  if( pwdh && (rc = backend_set_item(username, PASSWORD, pwdh)) < 0 ){
-    D("Problem storing password hash for user %s", username); return false;
+  if( pwdh && (backend_set_item(username, PASSWORD, pwdh) < 0) ){
+    D2("Problem storing password hash for user %s", username); return false;
   }
-  if( pubkey && (rc = backend_set_item(username, PUBKEY, pubkey)) < 0){
-    D("Problem storing public key for user %s", username); return false;
+  if( pubkey && (backend_set_item(username, PUBKEY, pubkey) < 0)){
+    D2("Problem storing public key for user %s", username); return false;
   }
 
   char seconds[20]; // Laaaaaaaaaaaaarge enough!
   sprintf(seconds, "%ld", time(NULL));
-  if( (rc = backend_set_item(username, LAST_ACCESSED, seconds)) < 0){
-    D("Problem storing expiration for user %s", username);
+  if( backend_set_item(username, LAST_ACCESSED, seconds) < 0 ){
+    D2("Problem storing expiration for user %s", username);
     return false;
   }
 
   return true;
 }
 
-static bool
-cache_hit(const char* path){
+bool
+backend_user_found(const char* username){
+  D2("Looking for '%s'", username);
+  char* path = strjoina(options->cache_dir, "/", username);
+  D2("Cache entry for %s: %s", username, path);
 
   struct stat st;
 
   /* Check path exists */
   if( stat(path, &st) ){ 
-    if (errno != ENOENT){ D("stat(%s) failed", path); }
+    if (errno != ENOENT){ D2("stat(%s) failed", path); }
     return false;
   }
 
   /* Check if path is a directory and is -rwx  */
-  if( !S_ISDIR(st.st_mode) ){ D("%s is not a directory", path); return false; }
-  if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){ D("%s is not 700", path); return false; }
+  if( !S_ISDIR(st.st_mode) ){ D2("%s is not a directory", path); return false; }
+  if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){ D2("%s is not 700", path); return false; }
 
-  D("%s is a dir and 700", path);
+  D2("%s is a dir and 700", path);
   return true;
 }
-
 
 /*
  * 'convert' to struct passwd
@@ -116,15 +117,10 @@ cache_hit(const char* path){
 int
 backend_convert(const char* username, struct passwd *result, char* buffer, size_t buflen)
 {
-  D("Backend convert for %s", username);
-  char* path = strjoina(options->cache_dir, "/", username);
-  D("Cache entry for %s: %s", username, path);
-
-  if( !cache_hit(path) ){ /* cache_miss */ return 1; }
+  if( !backend_user_found(username) ){ /* cache_miss */ return 1; }
 
   /* ok, cache found */
-  D("Convert to passwd struct (%s)", path);
-
+  D2("Backend convert for %s", username);
   if( copy2buffer(username, &(result->pw_name), &buffer, &buflen) < 0 ) { return -1; }
 
   if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ) { return -1; }
@@ -141,6 +137,6 @@ backend_convert(const char* username, struct passwd *result, char* buffer, size_
   *(buffer-1) = '/'; /* backtrack one char */
   if( copy2buffer(username, NULL, &buffer, &buflen) < 0) { return -1; }
 
-  D("Found: %s", username);
+  D2("Found: %s", username);
   return 0;
 }

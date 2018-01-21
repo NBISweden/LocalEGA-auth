@@ -19,7 +19,6 @@
 #define STORAGE_SIZE  1
 
 struct options_s {
-  bool debug;
   char* cfgfile;
   char* buffer;
   
@@ -52,10 +51,11 @@ typedef struct options_s options_t;
 
 extern options_t* options;
 
-bool loadconfig(const char* configfile);
+bool loadconfig(void);
 void cleanconfig(void);
+bool config_not_loaded(void);
 
-static inline void clean_conf(void* p){ D("Cleaning configuration"); cleanconfig(); }
+static inline void clean_conf(options_t** p){ D3("Cleaning configuration [%p]", *p); cleanconfig(); }
 #define _cleanup_conf_ __attribute__((cleanup(clean_conf)))
-    
+
 #endif /* !__LEGA_CONFIG_H_INCLUDED__ */
