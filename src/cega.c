@@ -103,6 +103,8 @@ fetch_from_cega(const char *username, char **buffer, size_t *buflen, int *errnop
   }
 
   cres = (struct curl_res_s*)malloc(sizeof(struct curl_res_s));
+  cres->body = NULL;
+  cres->size = 0;
   
   curl_easy_setopt(curl, CURLOPT_NOPROGRESS    , 1L               ); /* shut off the progress meter */
   curl_easy_setopt(curl, CURLOPT_URL           , endpoint         );
