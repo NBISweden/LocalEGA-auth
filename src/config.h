@@ -12,8 +12,7 @@
 #define EGA_SHELL "/sbin/nologin"
 
 #define CACHE_DIR "/ega/cache"
-#define CACHE_TTL 3600.0 // in seconds. 1hour
-#define EGA_ACCOUNT_EXPIRATION 36000.0 // in seconds. 10hours
+#define CACHE_TTL 3600.0 // 1h in seconds.
 #define PUBKEY        "pubkey"
 #define PASSWORD      "pwd"
 #define LAST_ACCESSED "last"
@@ -27,7 +26,7 @@ struct options_s {
   char* ega_gecos;         /* EGA User */
   char* ega_shell;         /* /bin/bash or /sbin/nologin */
 
-  double expiration;       /* Delay in seconds */
+  double cache_ttl;        /* How long a cache entry is valid (in seconds) */
   char* prompt;            /* Please enter password */
 
   char* cache_dir;         /* Cache directory for EGA users */

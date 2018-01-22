@@ -30,6 +30,10 @@ checkoptions(void)
   if(!options) { D3("No config struct"); return false; }
 
   D2("Checking the config struct");
+  if(options->cache_ttl < 0.0    ) { D3("Invalid cache_ttl");        valid = false; }
+  if(options->ega_uid < 0        ) { D3("Invalid ega_uid");          valid = false; }
+  if(options->ega_gid < 0        ) { D3("Invalid ega_gid");          valid = false; }
+
   if(!options->prompt            ) { D3("Invalid prompt");           valid = false; }
 
   if(!options->ega_dir           ) { D3("Invalid ega_dir");          valid = false; }
@@ -66,7 +70,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   char *key,*eq,*val,*end;
 
   /* Default config values */
-  options->expiration = EGA_ACCOUNT_EXPIRATION;
+  options->cache_ttl = CACHE_TTL;
   options->with_cega = ENABLE_CEGA;
 
   COPYVAL(CFGFILE   , options->cfgfile   );
@@ -103,9 +107,9 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     } else val = NULL; /* could not find the '=' sign */
 	
     if(!strcmp(key, "ega_dir_attrs"     )) { options->ega_dir_attrs = strtol(val, NULL, 8);    }
-    if(!strcmp(key, "ega_uid"           )) { options->ega_uid = (uid_t) strtol(val, NULL, 10); }
-    if(!strcmp(key, "ega_gid"           )) { options->ega_gid = (uid_t) strtol(val, NULL, 10); }
-    if(!strcmp(key, "expiration"        )) { options->expiration = strtol(val, NULL, 10); }
+    if(!strcmp(key, "ega_uid"           )) { if( !sscanf(val, "%u" , &(options->ega_uid)   )) options->ega_uid = -1; }
+    if(!strcmp(key, "ega_gid"           )) { if( !sscanf(val, "%u" , &(options->ega_gid)   )) options->ega_gid = -1; }
+    if(!strcmp(key, "cache_ttl"         )) { if( !sscanf(val, "%lf", &(options->cache_ttl) )) options->cache_ttl = -1; }
 
     INJECT_OPTION(key, "ega_dir" , val, options->ega_dir);
     INJECT_OPTION(key, "ega_gecos"     , val, options->ega_gecos     );

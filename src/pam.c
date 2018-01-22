@@ -186,33 +186,6 @@ pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
 }
 
 /*
- * Check if account has expired
- */
-PAM_EXTERN int
-pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
-{
-  int rc = PAM_PERM_DENIED;
-  const char *username;
-  int mflags = 0;
-
-  D1("Getting account PAM module options");
-  pam_options(&mflags, argc, argv);
-
-  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
-
-  D1("Checking account validity for '%s'", username);
-  if( config_not_loaded() ) return PAM_ABORT;
-
-  _cleanup_str_ char* last_accessed = NULL;
-  rc = backend_get_item(username, LAST_ACCESSED, &last_accessed);
-  if(!last_accessed || rc < 0){ D1("could not load the last_accessed time for '%s'", username); return PAM_ACCT_EXPIRED; }
-
-  rc = ( difftime(time(NULL), ((time_t)strtol(last_accessed, NULL, 10))) < EGA_ACCOUNT_EXPIRATION )?PAM_SUCCESS:PAM_ACCT_EXPIRED;
-  D1("Account %s",(rc==PAM_SUCCESS)?"valid":"expired");
-  return rc;
-}
-
-/*
  * Mount LegaFS, and Chroot to homedir
  */
 PAM_EXTERN int
@@ -284,5 +257,14 @@ PAM_EXTERN int
 pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
   D1("Session close: Success");
+  return PAM_SUCCESS;
+}
+
+
+/* Allow the account */
+PAM_EXTERN int
+pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char *argv[])
+{
+  D1("Account: allowed");
   return PAM_SUCCESS;
 }

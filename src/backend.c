@@ -11,13 +11,10 @@
 #include "backend.h"
 
 /*
-  We use 'buffer' to store the cache/username/item path.
-  That way, we don't need to allocate strings
+  We use strjoina(...) to allocate on the stack
+  That way, we don't need to free that mem
 
-  We use 0 for success
-        -1 for buffer too small
-	-2 for errors in general
-	 n strictly positive for nb of bytes returned
+  We use also __attribute__((cleanup)) to free the other allocated mem
 */
 
 int
@@ -61,7 +58,7 @@ backend_set_item(const char* username, const char* item, const char* content){
 }
 
 /*
- * Assumes config file already read
+ * Assumes config file already loaded
  */
 bool
 backend_add_user(const char* username, const char* pwdh, const char* pubkey)
@@ -89,6 +86,13 @@ backend_add_user(const char* username, const char* pwdh, const char* pubkey)
   return true;
 }
 
+/*
+ * Check the cache entry:
+ *       - /ega/cache/<username> exists
+ *       - it is a dir
+ *       - it is 700
+ *       - (now - last_access) < CACHE_TTL
+ */
 bool
 backend_user_found(const char* username){
   D2("Looking for '%s'", username);
@@ -124,6 +128,10 @@ backend_user_found(const char* username){
 
 /*
  * 'convert' to struct passwd
+ *
+ * We use -1 in case the buffer is too small
+ *         0 on success
+ *         1 on cache miss / user not found
  */
 int
 backend_convert(const char* username, struct passwd *result, char* buffer, size_t buflen)
