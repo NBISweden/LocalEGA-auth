@@ -69,7 +69,7 @@ backend_add_user(const char* username, const char* pwdh, const char* pubkey)
   char* userdir = strjoina(options->cache_dir, "/", username);
   D1("Adding '%s' to cache [%s]", username, userdir);
   /* Create the new directory */
-  if (mkdir(userdir, 0700)){ D2("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
+  if (mkdir(userdir, 0700) && errno != EEXIST){ D2("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
 
   /* Store the files */
   if( pwdh && (backend_set_item(username, PASSWORD, pwdh) < 0) ){
@@ -108,7 +108,18 @@ backend_user_found(const char* username){
   if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){ D3("%s is not 700", path); return false; }
 
   D3("%s is a dir and 700", path);
-  return true;
+
+  D2("Checking cache TTL");
+
+  _cleanup_str_ char* last_accessed = NULL;
+  bool valid = false;
+  int rc = backend_get_item(username, LAST_ACCESSED, &last_accessed);
+  if(!last_accessed || rc < 0){ valid = false; }
+  else {
+    valid = ( difftime(time(NULL), ((time_t)strtol(last_accessed, NULL, 10))) < CACHE_TTL );
+  }
+  D1("Cache %s",(valid)?"valid":"too old");
+  return valid;
 }
 
 /*

@@ -207,7 +207,9 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
   rc = backend_get_item(username, LAST_ACCESSED, &last_accessed);
   if(!last_accessed || rc < 0){ D1("could not load the last_accessed time for '%s'", username); return PAM_ACCT_EXPIRED; }
 
-  return ( difftime(time(NULL), ((time_t)strtol(last_accessed, NULL, 10))) < EGA_ACCOUNT_EXPIRATION )?PAM_SUCCESS:PAM_ACCT_EXPIRED;
+  rc = ( difftime(time(NULL), ((time_t)strtol(last_accessed, NULL, 10))) < EGA_ACCOUNT_EXPIRATION )?PAM_SUCCESS:PAM_ACCT_EXPIRED;
+  D1("Account %s",(rc==PAM_SUCCESS)?"valid":"expired");
+  return rc;
 }
 
 /*

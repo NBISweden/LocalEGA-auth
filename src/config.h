@@ -12,11 +12,11 @@
 #define EGA_SHELL "/sbin/nologin"
 
 #define CACHE_DIR "/ega/cache"
+#define CACHE_TTL 3600.0 // in seconds. 1hour
 #define EGA_ACCOUNT_EXPIRATION 36000.0 // in seconds. 10hours
 #define PUBKEY        "pubkey"
 #define PASSWORD      "pwd"
 #define LAST_ACCESSED "last"
-#define STORAGE_SIZE  1
 
 struct options_s {
   char* cfgfile;
