@@ -99,15 +99,15 @@ backend_user_found(const char* username){
 
   /* Check path exists */
   if( stat(path, &st) ){ 
-    if (errno != ENOENT){ D2("stat(%s) failed", path); }
+    if (errno != ENOENT){ D3("stat(%s) failed", path); }
     return false;
   }
 
   /* Check if path is a directory and is -rwx  */
-  if( !S_ISDIR(st.st_mode) ){ D2("%s is not a directory", path); return false; }
-  if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){ D2("%s is not 700", path); return false; }
+  if( !S_ISDIR(st.st_mode) ){ D3("%s is not a directory", path); return false; }
+  if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){ D3("%s is not 700", path); return false; }
 
-  D2("%s is a dir and 700", path);
+  D3("%s is a dir and 700", path);
   return true;
 }
 
@@ -120,7 +120,7 @@ backend_convert(const char* username, struct passwd *result, char* buffer, size_
   if( !backend_user_found(username) ){ /* cache_miss */ return 1; }
 
   /* ok, cache found */
-  D2("Backend convert for %s", username);
+  D3("Backend convert for %s", username);
   if( copy2buffer(username, &(result->pw_name), &buffer, &buflen) < 0 ) { return -1; }
 
   if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ) { return -1; }
