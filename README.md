@@ -25,6 +25,17 @@ Update `/etc/nsswitch.conf` and add the ega module first, for passwd
 Note: Don't put it first, otherwise it'll search for every users on
 the system (eg sshd, root, ...).
 
+Then update your PAM service file. For example, include lines like:
+
+	# module_interface     control_flag     module_name                     module_arguments
+	auth                   required         /usr/local/lib/ega/pam_ega.so   use_first_pass
+	session                required         /usr/local/lib/ega/pam_ega.so
+
+See
+[the LocalEGA general documentation](http://localega.readthedocs.io)
+for further information, and examples.
+
+
 # How it is build
 
 This repository contains the NSS and PAM module for LocalEGA.
@@ -75,7 +86,3 @@ There are 4 components:
 
 
 The configuration settings are in `/etc/ega/auth.conf`.
-
-See
-[the LocalEGA general documentation](http://localega.readthedocs.io)
-for further information.
