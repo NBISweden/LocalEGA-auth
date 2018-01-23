@@ -2,256 +2,160 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#include <libpq-fe.h>
-#include <crypt.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <time.h>
 
-#include "debug.h"
+#include "utils.h"
 #include "config.h"
 #include "backend.h"
-#include "cega.h"
-#include "homedir.h"
-#include "blowfish/ow-crypt.h"
 
-static PGconn* conn;
+/*
+  We use strjoina(...) to allocate on the stack
+  That way, we don't need to free that mem
 
-/* connect to database */
+  We use also __attribute__((cleanup)) to free the other allocated mem
+*/
+
+int
+backend_get_item(const char* username, const char* item, char** content){
+
+  long length;
+  _cleanup_file_ FILE* f = NULL;
+
+  D2("Loading %s file for user %s", item, username);
+
+  char* path = strjoina(options->cache_dir, "/", username, "/", item);
+
+  D2("Loading %s", path);
+
+  f = fopen (path, "rb");
+  if( !f || ferror(f) ){ D2("Could not open file: %s", path); return -2; }
+
+  /* Get the size */
+  fseek (f, 0, SEEK_END);
+  length = ftell(f) + 1;
+  fseek (f, 0, SEEK_SET); // rewind
+
+  *content = (char*)malloc(sizeof(char) * length);
+  return fread(*content, sizeof(char), length, f); // \0 terminated?
+}
+
+int
+backend_set_item(const char* username, const char* item, const char* content){
+
+  _cleanup_file_ FILE* f = NULL;
+  char* path = strjoina(options->cache_dir, "/", username, "/", item);
+
+  D2("Opening file: %s", path);
+
+  f = fopen (path, "wb");
+  if(!f){ D2("Could not open file: %s", path); return -2; }
+  chmod(path, 0600);
+
+  D2("Storing data: %s", content);
+  return (fwrite(content, sizeof(char), strlen(content), f) > 0)?0:-2;
+}
+
+/*
+ * Assumes config file already loaded
+ */
 bool
-backend_open(int stayopen)
+backend_add_user(const char* username, const char* pwdh, const char* pubkey)
 {
-  D("called with args: stayopen: %d", stayopen);
-  if(!readconfig(CFGFILE)){ D("Can't read config"); return false; }
-  if(!conn){ 
-    DBGLOG("Connection to: %s", options->db_connstr);
-    conn = PQconnectdb(options->db_connstr);
+  char* userdir = strjoina(options->cache_dir, "/", username);
+  D1("Adding '%s' to cache [%s]", username, userdir);
+  /* Create the new directory */
+  if (mkdir(userdir, 0700) && errno != EEXIST){ D2("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
+
+  /* Store the files */
+  if( pwdh && (backend_set_item(username, PASSWORD, pwdh) < 0) ){
+    D2("Problem storing password hash for user %s", username); return false;
   }
-	  
-  if(PQstatus(conn) != CONNECTION_OK) {
-    SYSLOG("PostgreSQL connection failed: '%s'", PQerrorMessage(conn));
-    backend_close(); /* reentrant */
+  if( pubkey && (backend_set_item(username, PUBKEY, pubkey) < 0)){
+    D2("Problem storing public key for user %s", username); return false;
+  }
+
+  char seconds[20]; // Laaaaaaaaaaaaarge enough!
+  sprintf(seconds, "%ld", time(NULL));
+  if( backend_set_item(username, LAST_ACCESSED, seconds) < 0 ){
+    D2("Problem storing expiration for user %s", username);
     return false;
   }
-  D("DB Connection: %p", conn);
 
   return true;
 }
 
-
-/* close connection to database */
-void
-backend_close(void)
-{ 
-  D("called");
-  if (conn) PQfinish(conn);
-  conn = NULL;
-}
-
 /*
-  Assign a single value to *p from the specified row in the result.
-  We use 'buffer' to store the result values, and increase its size if necessary.
-  That way, we don't allocate strings for struct passwd
-*/
-static int
-_copy2buffer(const char* res, char **p, char **buf, size_t *buflen, int *errnop)
-{
-  size_t slen = strlen(res);
-
-  if(*buflen < slen+1) {
-    *errnop = ERANGE;
-    D("**************** try again");
-    return 1;
-  }
-  strncpy(*buf, res, slen);
-  (*buf)[slen] = '\0';
-
-  *p = *buf; /* where is the value inside buffer */
-  
-  *buf += slen + 1;
-  *buflen -= slen + 1;
-  
-  return 0;
-}
-
-/*
- * 'convert' a PGresult to struct passwd
+ * Check the cache entry:
+ *       - /ega/cache/<username> exists
+ *       - it is a dir
+ *       - it is 700
+ *       - (now - last_access) < CACHE_TTL
  */
-enum nss_status
-get_from_db(const char* username, struct passwd *result, char **buffer, size_t *buflen, int *errnop)
+bool
+backend_user_found(const char* username){
+  D2("Looking for '%s'", username);
+  char* path = strjoina(options->cache_dir, "/", username);
+  D2("Cache entry for %s: %s", username, path);
+
+  struct stat st;
+
+  /* Check path exists */
+  if( stat(path, &st) ){ 
+    if (errno != ENOENT){ D3("stat(%s) failed", path); }
+    return false;
+  }
+
+  /* Check if path is a directory and is -rwx  */
+  if( !S_ISDIR(st.st_mode) ){ D3("%s is not a directory", path); return false; }
+  if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){ D3("%s is not 700", path); return false; }
+
+  D3("%s is a dir and 700", path);
+
+  D2("Checking cache TTL");
+
+  _cleanup_str_ char* last_accessed = NULL;
+  bool valid = false;
+  int rc = backend_get_item(username, LAST_ACCESSED, &last_accessed);
+  if(!last_accessed || rc < 0){ valid = false; }
+  else {
+    valid = ( difftime(time(NULL), ((time_t)strtol(last_accessed, NULL, 10))) < CACHE_TTL );
+  }
+  D1("Cache %s",(valid)?"valid":"too old");
+  return valid;
+}
+
+/*
+ * 'convert' to struct passwd
+ *
+ * We use -1 in case the buffer is too small
+ *         0 on success
+ *         1 on cache miss / user not found
+ */
+int
+backend_convert(const char* username, struct passwd *result, char* buffer, size_t buflen)
 {
-  enum nss_status status = NSS_STATUS_NOTFOUND;
-  const char* params[1] = { username };
-  PGresult *res;
-  char *dummy;
-  
-  D("Prepared Statement with %s: %s", username, options->get_ent);
-  res = PQexecParams(conn, options->get_ent, 1, NULL, params, NULL, NULL, 0);
+  if( !backend_user_found(username) ){ /* cache_miss */ return 1; }
 
-  /* Check answer */
-  if(PQresultStatus(res) != PGRES_TUPLES_OK || !PQntuples(res)) goto BAILOUT;
+  /* ok, cache found */
+  D3("Backend convert for %s", username);
+  if( copy2buffer(username, &(result->pw_name), &buffer, &buflen) < 0 ) { return -1; }
 
-  D("Convert to passwd struct");
-  /* no error, let's convert the result to a struct pwd */
-  if(_copy2buffer(username          , &(result->pw_name)  , buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
-  if(_copy2buffer("x"               , &(result->pw_passwd), buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
-  if(_copy2buffer(options->ega_gecos, &(result->pw_gecos) , buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
-  if(_copy2buffer(options->ega_shell, &(result->pw_shell) , buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
+  if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ) { return -1; }
 
-  /* For the homedir: ega_fuse_dir/username */
-  if(_copy2buffer(options->ega_fuse_dir, &(result->pw_dir), buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
-  *(*buffer-1) = '/'; /* backtrack one char */
-  if(_copy2buffer(username, &dummy, buffer, buflen, errnop)) { status = NSS_STATUS_TRYAGAIN; goto BAILOUT; }
+  if( copy2buffer(options->ega_gecos, &(result->pw_gecos), &buffer, &buflen) < 0 ) { return -1; }
+
+  if( copy2buffer(options->ega_shell, &(result->pw_shell), &buffer, &buflen) < 0 ) { return -1; }
 
   result->pw_uid = options->ega_uid;
   result->pw_gid = options->ega_gid;
 
-  D("Found: %s", username);
-  status = NSS_STATUS_SUCCESS;
+  /* For the homedir: ega_fuse_dir/username */
+  if( copy2buffer(options->ega_fuse_dir, &(result->pw_dir), &buffer, &buflen) < 0 ) { return -1; }
+  *(buffer-1) = '/'; /* backtrack one char */
+  if( copy2buffer(username, NULL, &buffer, &buflen) < 0) { return -1; }
 
-BAILOUT:
-  PQclear(res);
-  return status;
-}
-
-/*
- * refresh the user last accessed date
- */
-int
-session_refresh_user(const char* username)
-{
-  int status = PAM_SESSION_ERR;
-  const char* params[1] = { username };
-  PGresult *res;
-
-  if(!backend_open(0)) return PAM_SESSION_ERR;
-
-  D("Refreshing user %s", username);
-  res = PQexecParams(conn, "SELECT refresh_user($1)", 1, NULL, params, NULL, NULL, 0);
-
-  status = (PQresultStatus(res) != PGRES_TUPLES_OK)?PAM_SUCCESS:PAM_SESSION_ERR;
-
-  PQclear(res);
-  backend_close();
-  return status;
-}
-
-/*
- * Has the account expired
- */
-int
-account_valid(const char* username)
-{
-  int status = PAM_PERM_DENIED;
-  const char* params[1] = { username };
-  PGresult *res;
-
-  if(!backend_open(0)) return PAM_PERM_DENIED;
-
-  D("Prepared Statement: %s with %s", options->get_account, username);
-  res = PQexecParams(conn, options->get_account, 1, NULL, params, NULL, NULL, 0);
-
-  /* Check answer */
-  status = (PQresultStatus(res) == PGRES_TUPLES_OK)?PAM_SUCCESS:PAM_ACCT_EXPIRED;
-
-  PQclear(res);
-  backend_close();
-  return status;
-}
-
-/* Assumes backend is open */
-bool
-add_to_db(const char* username, const char* pwdh, const char* pubkey)
-{
-  const char* params[3] = { username, pwdh, pubkey };
-  PGresult *res;
-  bool success;
-
-  D("Prepared Statement: %s", options->add_user);
-  D("with VALUES('%s','%s','%s')", username, pwdh, pubkey);
-  res = PQexecParams(conn, options->add_user, 3, NULL, params, NULL, NULL, 0);
-
-  success = (PQresultStatus(res) == PGRES_TUPLES_OK);
-  if(!success) D("%s", PQerrorMessage(conn));
-  PQclear(res);
-  return success;
-}
-
-
-/*
- * Get one entry from the Postgres result
- * or contact CentralEGA and retry.
- */
-enum nss_status
-backend_get_userentry(const char *username, struct passwd *result,
-		      char **buffer, size_t *buflen, int *errnop)
-{
-  D("called");
-  enum nss_status status = NSS_STATUS_NOTFOUND;
-
-  if(!backend_open(0)) return NSS_STATUS_UNAVAIL;
-
-  status = get_from_db(username, result, buffer, buflen, errnop);
-  if (status == NSS_STATUS_SUCCESS) return status;
-
-  /* OK, User not found in DB */
-
-  /* if CEGA disabled */
-  if(!options->with_cega){
-    D("Contacting cega for user %s is disabled", username);
-    return NSS_STATUS_NOTFOUND;
-  }
-    
-  if(!fetch_from_cega(username, buffer, buflen, errnop))
-    return NSS_STATUS_NOTFOUND;
-
-  /* User retrieved from Central EGA, try again the DB */
-  status = get_from_db(username, result, buffer, buflen, errnop);
-  if (status == NSS_STATUS_SUCCESS){
-    create_ega_dir(options->ega_dir, username, result->pw_uid, result->pw_gid, options->ega_dir_attrs); /* In that case, create the homedir */
-    return status;
-  }
-
-  D("No luck, user %s not found", username);
-  /* No luck, user not found */
-  return NSS_STATUS_NOTFOUND;
-}
-
-
-bool
-backend_authenticate(const char *username, const char *password)
-{
-  int status = false;
-  const char* params[1] = { username };
-  const char* pwdh = NULL;
-  PGresult *res;
-
-  if(!backend_open(0)) return false;
-
-  D("Prepared Statement: %s with %s", options->get_password, username);
-  res = PQexecParams(conn, options->get_password, 1, NULL, params, NULL, NULL, 0);
-
-  /* Check answer */
-  if(PQresultStatus(res) != PGRES_TUPLES_OK || !PQntuples(res)) goto BAIL_OUT;
-  
-  /* no error, so fetch the result */
-  pwdh = strdup(PQgetvalue(res, 0, 0)); /* row 0, col 0 */
-
-  if(!strncmp(pwdh, "$2", 2)){
-    D("Using Blowfish");
-    char pwdh_computed[64];
-    if( crypt_rn(password, pwdh, pwdh_computed, 64) == NULL){
-      D("bcrypt failed");
-      goto BAIL_OUT;
-    }
-    if(!strcmp(pwdh, (char*)&pwdh_computed[0]))
-      status = true;
-  } else {
-    D("Using libc: supporting MD5, SHA256, SHA512");
-    if (!strcmp(pwdh, crypt(password, pwdh)))
-      status = true;
-  }
-
-BAIL_OUT:
-  PQclear(res);
-  if(pwdh) free((void*)pwdh);
-  backend_close();
-  return status;
+  D2("Found: %s", username);
+  return 0;
 }

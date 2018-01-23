@@ -2,21 +2,14 @@
 #define __LEGA_BACKEND_H_INCLUDED__
 
 #include <stdbool.h>
-#include <nss.h>
 #include <pwd.h>
-#include <security/pam_appl.h>
 
-bool backend_open(int stayopen);
+bool backend_add_user(const char* username, const char* pwdh, const char* pubkey);
 
-void backend_close(void);
+bool backend_user_found(const char* username);
+int backend_convert(const char* username, struct passwd *result, char *buffer, size_t buflen);
 
-enum nss_status backend_get_userentry(const char *name, struct passwd *result, char** buffer, size_t* buflen, int* errnop);
-
-bool add_to_db(const char* username, const char* pwdh, const char* pubkey);
-
-int account_valid(const char* username);
-int session_refresh_user(const char* username);
-
-bool backend_authenticate(const char *user, const char *pwd);
+int backend_get_item(const char* username, const char* item, char** content);
+int backend_set_item(const char* username, const char* item, const char* content);
 
 #endif /* !__LEGA_BACKEND_H_INCLUDED__ */

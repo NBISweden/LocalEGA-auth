@@ -2,54 +2,59 @@
 #define __LEGA_CONFIG_H_INCLUDED__
 
 #include <stdbool.h>
+#include <sys/types.h> 
 
 #define CFGFILE "/etc/ega/auth.conf"
 #define ENABLE_CEGA false
-#define BUFFER_REST 1024
 #define CEGA_CERT "/etc/ega/cega.pem"
 #define PROMPT "Please, enter your EGA password: "
+#define EGA_GECOS "EGA User"
+#define EGA_SHELL "/sbin/nologin"
+
+#define CACHE_DIR "/ega/cache"
+#define CACHE_TTL 3600.0 // 1h in seconds.
+#define PUBKEY        "pubkey"
+#define PASSWORD      "pwd"
+#define LAST_ACCESSED "last"
 
 struct options_s {
-  bool debug;
-  const char* cfgfile;
+  char* cfgfile;
+  char* buffer;
   
-  /* Database cache connection */
-  char* db_connstr;
-
-  /* NSS & PAM queries */
   uid_t ega_uid;
   gid_t ega_gid;
-  const char* ega_gecos;      /* EGA User */
-  const char* ega_shell;      /* /bin/bash or /sbin/nologin */
+  char* ega_gecos;         /* EGA User */
+  char* ega_shell;         /* /bin/bash or /sbin/nologin */
 
-  const char* get_ent;        /* SELECT * FROM users WHERE elixir_id = $1 */
-  const char* add_user;       /* INSERT INTO users (elixir_id, password_hash, pubkey) VALUES($1,$2,$3) */
-  const char* get_password;   /* SELECT password_hash FROM users WHERE elixir_id = $1 */
-  const char* get_account;    /* SELECT elixir_id FROM users WHERE elixir_id = $1 */
-  const char* prompt;         /* Please enter password */
+  double cache_ttl;        /* How long a cache entry is valid (in seconds) */
+  char* prompt;            /* Please enter password */
 
-  const char* ega_dir;        /* EGA main inbox directory */
-  long int ega_dir_attrs;     /* in octal form */
-  const char* ega_fuse_dir;   /* EGA virtual fuse top directory */
-  const char* ega_fuse_exec;  /* LegaFS fuse executable */
-  char* ega_fuse_flags;       /* Mount flags for fuse directory per user */
+  char* cache_dir;         /* Cache directory for EGA users */
+
+  char* ega_dir;           /* EGA main inbox directory */
+  long int ega_dir_attrs;  /* in octal form */
+  char* ega_fuse_dir;      /* EGA virtual fuse top directory */
+  char* ega_fuse_exec;     /* LegaFS fuse executable */
+  char* ega_fuse_flags;    /* Mount flags for fuse directory per user */
 
   /* Contacting Central EGA (vie REST call) */
-  bool with_cega;                /* enable the lookup in case the entry is not found in the database cache */
-  const char* cega_endpoint;     /* https://central_ega/user/<some-id> | returns a triplet in JSON format */
-  const char* cega_user;      
-  const char* cega_password;     /* for authentication: user:password */
-  const char* cega_resp_passwd;  /* Searching with jq for the password field */
-  const char* cega_resp_pubkey;  /* Searching with jq for the public key field */
-  long int rest_buffer_size;     /* 1024 */
-  const char* ssl_cert;          /* path the SSL certificate to contact Central EGA */
+  bool with_cega;          /* enable the lookup in case the entry is not found in the database cache */
+  char* cega_endpoint;     /* https://central_ega/user/<some-id> | returns a triplet in JSON format */
+  char* cega_creds;        /* for authentication: user:password */
+  char* cega_json_passwd;  /* Searching with jq for the password field */
+  char* cega_json_pubkey;  /* Searching with jq for the public key field */
+  char* ssl_cert;          /* path the SSL certificate to contact Central EGA */
 };
 
 typedef struct options_s options_t;
 
 extern options_t* options;
 
-bool readconfig(const char* configfile);
+bool loadconfig(void);
 void cleanconfig(void);
-    
+bool config_not_loaded(void);
+
+static inline void clean_conf(options_t** p){ D3("Cleaning configuration [%p]", *p); cleanconfig(); }
+#define _cleanup_conf_ __attribute__((cleanup(clean_conf)))
+
 #endif /* !__LEGA_CONFIG_H_INCLUDED__ */
