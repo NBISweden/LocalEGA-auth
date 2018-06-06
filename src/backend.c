@@ -151,8 +151,8 @@ backend_convert(const char* username, struct passwd *result, char* buffer, size_
   result->pw_uid = options->ega_uid;
   result->pw_gid = options->ega_gid;
 
-  /* For the homedir: ega_fuse_dir/username */
-  if( copy2buffer(options->ega_fuse_dir, &(result->pw_dir), &buffer, &buflen) < 0 ) { return -1; }
+  /* For the homedir: ega_dir/username */
+  if( copy2buffer(options->ega_dir, &(result->pw_dir), &buffer, &buflen) < 0 ) { return -1; }
   *(buffer-1) = '/'; /* backtrack one char */
   if( copy2buffer(username, NULL, &buffer, &buflen) < 0) { return -1; }
 

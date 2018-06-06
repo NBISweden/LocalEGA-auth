@@ -38,7 +38,6 @@ checkoptions(void)
 
   if(!options->ega_dir           ) { D3("Invalid ega_dir");          valid = false; }
   if(!options->ega_dir_attrs     ) { D3("Invalid ega_dir_attrs");    valid = false; }
-  if(!options->ega_fuse_dir      ) { D3("Invalid ega_fuse_dir");     valid = false; }
   if(!options->ega_fuse_flags    ) { D3("Invalid ega_fuse_flags");   valid = false; }
   if(!options->ega_fuse_exec     ) { D3("Invalid ega_fuse_exec");    valid = false; }
 
@@ -114,7 +113,6 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     INJECT_OPTION(key, "ega_dir" , val, options->ega_dir);
     INJECT_OPTION(key, "ega_gecos"     , val, options->ega_gecos     );
     INJECT_OPTION(key, "ega_shell"     , val, options->ega_shell     );
-    INJECT_OPTION(key, "ega_fuse_dir"  , val, options->ega_fuse_dir  );
     INJECT_OPTION(key, "ega_fuse_exec" , val, options->ega_fuse_exec );
     INJECT_OPTION(key, "ega_fuse_flags", val, options->ega_fuse_flags);
 

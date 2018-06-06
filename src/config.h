@@ -33,7 +33,6 @@ struct options_s {
 
   char* ega_dir;           /* EGA main inbox directory */
   long int ega_dir_attrs;  /* in octal form */
-  char* ega_fuse_dir;      /* EGA virtual fuse top directory */
   char* ega_fuse_exec;     /* LegaFS fuse executable */
   char* ega_fuse_flags;    /* Mount flags for fuse directory per user */
 
