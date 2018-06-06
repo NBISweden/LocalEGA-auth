@@ -205,8 +205,8 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   if( config_not_loaded() ) return PAM_SESSION_ERR;
 
   /* Construct mountpoint and rootdir_options */
-  mountpoint = strjoina(options->ega_fuse_dir, "/", username);
-  mount_options = strjoina(options->ega_fuse_flags, ",rootdir=", options->ega_dir, "/", username, ",user=", username);
+  mountpoint = strjoina(options->ega_dir, "/", username);
+  mount_options = strjoina(options->ega_fuse_flags, ",user=", username);
   D1("Mounting LegaFS for %s at %s", username, mountpoint);
 
   /*
