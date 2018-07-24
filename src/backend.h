@@ -4,7 +4,12 @@
 #include <stdbool.h>
 #include <pwd.h>
 
-bool backend_add_user(const char* username, const char* pwdh, const char* pubkey);
+bool backend_add_user(const char* username,
+		      const char* uid,
+		      const char* pwdh,
+		      const char* pubkey,
+		      const char* gecos,
+		      const char* shell);
 
 bool backend_user_found(const char* username);
 int backend_convert(const char* username, struct passwd *result, char *buffer, size_t buflen);

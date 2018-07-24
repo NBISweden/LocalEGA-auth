@@ -31,7 +31,6 @@ checkoptions(void)
 
   D2("Checking the config struct");
   if(options->cache_ttl < 0.0    ) { D3("Invalid cache_ttl");        valid = false; }
-  if(options->ega_uid < 0        ) { D3("Invalid ega_uid");          valid = false; }
   if(options->ega_gid < 0        ) { D3("Invalid ega_gid");          valid = false; }
 
   if(!options->prompt            ) { D3("Invalid prompt");           valid = false; }
@@ -43,15 +42,16 @@ checkoptions(void)
 
   if(!options->cache_dir         ) { D3("Invalid cache_dir");        valid = false; }
 
-  if(!options->ega_uid           ) { D3("Invalid ega_uid");          valid = false; }
   if(!options->ega_gid           ) { D3("Invalid ega_gid");          valid = false; }
-  if(!options->ega_gecos         ) { D3("Invalid ega_gecos");        valid = false; }
-  if(!options->ega_shell         ) { D3("Invalid ega_shell");        valid = false; }
 
   if(!options->cega_endpoint     ) { D3("Invalid cega_endpoint");    valid = false; }
   if(!options->cega_creds        ) { D3("Invalid cega_creds");       valid = false; }
   if(!options->cega_json_passwd  ) { D3("Invalid cega_json_passwd"); valid = false; }
   if(!options->cega_json_pubkey  ) { D3("Invalid cega_json_pubkey"); valid = false; }
+  if(!options->cega_json_uid     ) { D3("Invalid cega_json_uid");    valid = false; }
+  if(!options->cega_json_gecos   ) { D3("Invalid cega_json_gecos");  valid = false; }
+  if(!options->cega_json_shell   ) { D3("Invalid cega_json_shell");  valid = false; }
+
   /* if(options->ssl_cert          ) { D3("Invalid ssl_cert");      valid = false; } */
 
   if(!valid){ D3("Invalid config struct from %s", options->cfgfile); }
@@ -76,8 +76,6 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   COPYVAL(CACHE_DIR , options->cache_dir );
   COPYVAL(PROMPT    , options->prompt    );
   COPYVAL(CEGA_CERT , options->ssl_cert  );
-  COPYVAL(EGA_GECOS , options->ega_gecos );
-  COPYVAL(EGA_SHELL , options->ega_shell );
 
   /* Parse line by line */
   while (getline(&line, &len, fp) > 0) {
@@ -106,13 +104,10 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     } else val = NULL; /* could not find the '=' sign */
 	
     if(!strcmp(key, "ega_dir_attrs"     )) { options->ega_dir_attrs = strtol(val, NULL, 8);    }
-    if(!strcmp(key, "ega_uid"           )) { if( !sscanf(val, "%u" , &(options->ega_uid)   )) options->ega_uid = -1; }
     if(!strcmp(key, "ega_gid"           )) { if( !sscanf(val, "%u" , &(options->ega_gid)   )) options->ega_gid = -1; }
     if(!strcmp(key, "cache_ttl"         )) { if( !sscanf(val, "%lf", &(options->cache_ttl) )) options->cache_ttl = -1; }
 
     INJECT_OPTION(key, "ega_dir" , val, options->ega_dir);
-    INJECT_OPTION(key, "ega_gecos"     , val, options->ega_gecos     );
-    INJECT_OPTION(key, "ega_shell"     , val, options->ega_shell     );
     INJECT_OPTION(key, "ega_fuse_exec" , val, options->ega_fuse_exec );
     INJECT_OPTION(key, "ega_fuse_flags", val, options->ega_fuse_flags);
 
@@ -123,6 +118,10 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     INJECT_OPTION(key, "cega_creds"       , val, options->cega_creds       );
     INJECT_OPTION(key, "cega_json_passwd" , val, options->cega_json_passwd );
     INJECT_OPTION(key, "cega_json_pubkey" , val, options->cega_json_pubkey );
+    INJECT_OPTION(key, "cega_json_gecos"  , val, options->cega_json_gecos  );
+    INJECT_OPTION(key, "cega_json_shell"  , val, options->cega_json_shell  );
+    INJECT_OPTION(key, "cega_json_uid"    , val, options->cega_json_uid    );
+
     INJECT_OPTION(key, "ssl_cert"         , val, options->ssl_cert         );
 
     if(!strcmp(key, "enable_cega")) {

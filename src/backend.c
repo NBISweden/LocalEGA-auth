@@ -22,12 +22,9 @@ backend_get_item(const char* username, const char* item, char** content){
 
   long length;
   _cleanup_file_ FILE* f = NULL;
-
-  D2("Loading %s file for user %s", item, username);
-
   char* path = strjoina(options->cache_dir, "/", username, "/", item);
 
-  D2("Loading %s", path);
+  D2("Loading %s file for user %s: %s", item, username, path);
 
   f = fopen (path, "rb");
   if( !f || ferror(f) ){ D2("Could not open file: %s", path); return -2; }
@@ -61,7 +58,12 @@ backend_set_item(const char* username, const char* item, const char* content){
  * Assumes config file already loaded
  */
 bool
-backend_add_user(const char* username, const char* pwdh, const char* pubkey)
+backend_add_user(const char* username,
+		 const char* uid,
+		 const char* pwdh,
+		 const char* pubkey,
+		 const char* gecos,
+		 const char* shell)
 {
   char* userdir = strjoina(options->cache_dir, "/", username);
   D1("Adding '%s' to cache [%s]", username, userdir);
@@ -69,11 +71,20 @@ backend_add_user(const char* username, const char* pwdh, const char* pubkey)
   if (mkdir(userdir, 0700) && errno != EEXIST){ D2("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
 
   /* Store the files */
+  if( uid && (backend_set_item(username, EGA_UID, uid) < 0) ){
+    D2("Problem storing the user id hash for user %s", username); return false;
+  }
   if( pwdh && (backend_set_item(username, PASSWORD, pwdh) < 0) ){
     D2("Problem storing password hash for user %s", username); return false;
   }
   if( pubkey && (backend_set_item(username, PUBKEY, pubkey) < 0)){
     D2("Problem storing public key for user %s", username); return false;
+  }
+  if( gecos && (backend_set_item(username, EGA_GECOS, gecos) < 0)){
+    D2("Problem storing the gecos information for user %s", username); return false;
+  }
+  if( shell && (backend_set_item(username, EGA_SHELL, shell) < 0)){
+    D2("Problem storing the shell for user %s", username); return false;
   }
 
   char seconds[20]; // Laaaaaaaaaaaaarge enough!
@@ -136,7 +147,13 @@ backend_user_found(const char* username){
 int
 backend_convert(const char* username, struct passwd *result, char* buffer, size_t buflen)
 {
+  int rc;
+  uid_t ega_uid; // unsigned int
   if( !backend_user_found(username) ){ /* cache_miss */ return 1; }
+
+  _cleanup_str_ char* gecos = NULL;
+  _cleanup_str_ char* uid = NULL;
+  _cleanup_str_ char* shell = NULL;
 
   /* ok, cache found */
   D3("Backend convert for %s", username);
@@ -144,11 +161,20 @@ backend_convert(const char* username, struct passwd *result, char* buffer, size_
 
   if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ) { return -1; }
 
-  if( copy2buffer(options->ega_gecos, &(result->pw_gecos), &buffer, &buflen) < 0 ) { return -1; }
+  rc = backend_get_item(username, EGA_GECOS, &gecos);
+  if(!gecos || rc < 0){ D1("Could not load the gecos information of '%s'", username); return -1; }
+  if( copy2buffer(gecos, &(result->pw_gecos), &buffer, &buflen) < 0 ) { return -1; }
 
-  if( copy2buffer(options->ega_shell, &(result->pw_shell), &buffer, &buflen) < 0 ) { return -1; }
+  rc = backend_get_item(username, EGA_SHELL, &shell);
+  if(!shell || rc < 0){ D1("Could not load the shell information of '%s'", username); return -1; }
+  if( copy2buffer(shell, &(result->pw_shell), &buffer, &buflen) < 0 ) { return -1; }
 
-  result->pw_uid = options->ega_uid;
+  rc = backend_get_item(username, EGA_UID, &uid);
+  if(!uid || rc < 0){ D1("Could not load the user id of '%s'", username); return -1; }
+  if( !sscanf(uid, "%u" , &ega_uid) ){ D1("Could not convert the user id of '%s' to an int", username); return -1; }
+  D2("%s has user id %d", username, ega_uid);
+
+  result->pw_uid = ega_uid;
   result->pw_gid = options->ega_gid;
 
   /* For the homedir: ega_dir/username */
@@ -157,5 +183,6 @@ backend_convert(const char* username, struct passwd *result, char* buffer, size_
   if( copy2buffer(username, NULL, &buffer, &buflen) < 0) { return -1; }
 
   D2("Found: %s", username);
+
   return 0;
 }

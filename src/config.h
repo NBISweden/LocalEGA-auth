@@ -8,23 +8,21 @@
 #define ENABLE_CEGA false
 #define CEGA_CERT "/etc/ega/cega.pem"
 #define PROMPT "Please, enter your EGA password: "
-#define EGA_GECOS "EGA User"
-#define EGA_SHELL "/sbin/nologin"
 
 #define CACHE_DIR "/ega/cache"
 #define CACHE_TTL 3600.0 // 1h in seconds.
 #define PUBKEY        "pubkey"
 #define PASSWORD      "pwd"
 #define LAST_ACCESSED "last"
+#define EGA_UID       "uid"
+#define EGA_GECOS     "gecos"
+#define EGA_SHELL     "shell"
 
 struct options_s {
   char* cfgfile;
   char* buffer;
   
-  uid_t ega_uid;
   gid_t ega_gid;
-  char* ega_gecos;         /* EGA User */
-  char* ega_shell;         /* /bin/bash or /sbin/nologin */
 
   double cache_ttl;        /* How long a cache entry is valid (in seconds) */
   char* prompt;            /* Please enter password */
@@ -42,6 +40,9 @@ struct options_s {
   char* cega_creds;        /* for authentication: user:password */
   char* cega_json_passwd;  /* Searching with jq for the password field */
   char* cega_json_pubkey;  /* Searching with jq for the public key field */
+  char* cega_json_uid;     /* Searching with jq for the user id field */
+  char* cega_json_gecos;   /* Searching with jq for the gecos field */
+  char* cega_json_shell;   /* Searching with jq for the shell field */
   char* ssl_cert;          /* path the SSL certificate to contact Central EGA */
 };
 
