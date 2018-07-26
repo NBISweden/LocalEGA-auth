@@ -5,136 +5,155 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
+#include <sqlite3.h>
 
 #include "utils.h"
-#include "config.h"
 #include "backend.h"
 
-/*
-  We use strjoina(...) to allocate on the stack
-  That way, we don't need to free that mem
 
-  We use also __attribute__((cleanup)) to free the other allocated mem
-*/
+/* DB schema */
+#define EGA_SCHEMA "CREATE TABLE IF NOT EXISTS users (username TEXT UNIQUE PRIMARY KEY, \
+                                                      uid      INTEGER UNIQUE,          \
+                    		 		      pwdh     TEXT,	                \
+		                    		      pubkey   TEXT,	                \
+				                      gecos    TEXT,                    \
+		                    		      shell    TEXT,                    \
+                    				      expire   REAL);"
 
-int
-backend_get_item(const char* username, const char* item, char** content){
+/* WITHOUT ROWID works only from 3.8.2 */
 
-  long length;
-  _cleanup_file_ FILE* f = NULL;
-  char* path = strjoina(options->cache_dir, "/", username, "/", item);
+/* columns */
+#define EGA_USERNAME 0
+#define EGA_UID      1
+#define EGA_PASSWD_H 2
+#define EGA_PUBKEY   3
+#define EGA_GECOS    4
+#define EGA_SHELL    5
+#define EGA_EXPIRE   6
 
-  D2("Loading %s file for user %s: %s", item, username, path);
-
-  f = fopen (path, "rb");
-  if( !f || ferror(f) ){ D2("Could not open file: %s", path); return -2; }
-
-  /* Get the size */
-  fseek (f, 0, SEEK_END);
-  length = ftell(f) + 1;
-  fseek (f, 0, SEEK_SET); // rewind
-
-  *content = (char*)malloc(sizeof(char) * length);
-  return fread(*content, sizeof(char), length, f); // \0 terminated?
-}
-
-int
-backend_set_item(const char* username, const char* item, const char* content){
-
-  _cleanup_file_ FILE* f = NULL;
-  char* path = strjoina(options->cache_dir, "/", username, "/", item);
-
-  D2("Opening file: %s", path);
-
-  f = fopen (path, "wb");
-  if(!f){ D2("Could not open file: %s", path); return -2; }
-  chmod(path, 0600);
-
-  D2("Storing data: %s", content);
-  return (fwrite(content, sizeof(char), strlen(content), f) > 0)?0:-2;
-}
+static sqlite3* db = NULL;
 
 /*
- * Assumes config file already loaded
+ * Constructor/Destructor when the library is loaded
+ *
+ * See: http://man7.org/linux/man-pages/man3/dlopen.3.html
+ *
+ */
+__attribute__((constructor))
+static void
+init(void)
+{
+  D3("********** CONSTRUCTOR");
+  backend_open();
+}
+
+__attribute__((destructor))
+static void
+destroy(void)
+{
+  D3("********** DESTRUCTOR");
+  backend_close(); 
+}
+
+inline bool
+backend_opened(void)
+{
+  return db != NULL && sqlite3_errcode(db) == SQLITE_OK;
+}
+
+void
+backend_open(void)
+{
+  loadconfig();
+  if( !config_loaded() ) return;
+  if( backend_opened() ) return;
+
+  D1("Connection to: %s", options->db_connstr);
+  sqlite3_open(options->db_connstr, &db);
+  if (db == NULL){ D1("Failed to allocate database handle"); return; }
+  D3("DB Connection: %p", db);
+  
+  if( sqlite3_errcode(db) != SQLITE_OK) {
+    D1("Failed to open DB: [%d] %s", sqlite3_extended_errcode(db), sqlite3_errstr(sqlite3_extended_errcode(db)));
+    return;
+  }
+  
+  /* create table */
+  D2("Creating the database schema");
+  sqlite3_stmt *stmt;
+  sqlite3_prepare_v2(db, EGA_SCHEMA, -1, &stmt, NULL);
+  if (!stmt || sqlite3_step(stmt) != SQLITE_DONE) { D1("ERROR creating table: %s", sqlite3_errmsg(db)); }
+  sqlite3_finalize(stmt);
+}
+
+void
+backend_close(void)
+{
+  D2("Closing database backend");
+  if(db) sqlite3_close(db);
+  cleanconfig();
+}
+
+
+/*
+ * Assumes config file already loaded and backend open
  */
 bool
 backend_add_user(const char* username,
-		 const char* uid,
+		 const char* uid_s,
 		 const char* pwdh,
 		 const char* pubkey,
 		 const char* gecos,
 		 const char* shell)
 {
-  char* userdir = strjoina(options->cache_dir, "/", username);
-  D1("Adding '%s' to cache [%s]", username, userdir);
-  /* Create the new directory */
-  if (mkdir(userdir, 0700) && errno != EEXIST){ D2("unable to mkdir 700 %s [%s]", userdir, strerror(errno)); return false; }
 
-  /* Store the files */
-  if( uid && (backend_set_item(username, EGA_UID, uid) < 0) ){
-    D2("Problem storing the user id hash for user %s", username); return false;
-  }
-  if( pwdh && (backend_set_item(username, PASSWORD, pwdh) < 0) ){
-    D2("Problem storing password hash for user %s", username); return false;
-  }
-  if( pubkey && (backend_set_item(username, PUBKEY, pubkey) < 0)){
-    D2("Problem storing public key for user %s", username); return false;
-  }
-  if( gecos && (backend_set_item(username, EGA_GECOS, gecos) < 0)){
-    D2("Problem storing the gecos information for user %s", username); return false;
-  }
-  if( shell && (backend_set_item(username, EGA_SHELL, shell) < 0)){
-    D2("Problem storing the shell for user %s", username); return false;
-  }
+  /* conversion to uid_t */
+  uid_t uid;
+  if(!uid_s){ D1("Could not load the user id of '%s'", username); return false; }
+  if( !sscanf(uid_s, "%u" , &uid) ){ D1("Could not convert the user id of '%s' to an int", username); return false; }
+  uid += options->range_shift;
+  D2("%s has user id %d", username, uid);
 
-  char seconds[20]; // Laaaaaaaaaaaaarge enough!
-  sprintf(seconds, "%ld", time(NULL));
-  if( backend_set_item(username, LAST_ACCESSED, seconds) < 0 ){
-    D2("Problem storing expiration for user %s", username);
-    return false;
-  }
+  sqlite3_stmt *stmt = NULL;
 
-  return true;
+  D1("Insert %s into cache", username);
+
+  /* The entry should not be there */
+  sqlite3_prepare_v2(db, "INSERT INTO users (username,uid,pwdh,pubkey,gecos,shell,expire) VALUES(?1,?2,?3,?4,?5,?6,?7)", -1, &stmt, NULL);
+  if(!stmt){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
+
+  sqlite3_bind_text(stmt,   1, username, -1, SQLITE_STATIC);
+  sqlite3_bind_int(stmt,    2, uid                        );
+  sqlite3_bind_text(stmt,   3, pwdh    , -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt,   4, pubkey  , -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt,   5, gecos   , -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt,   6, shell   , -1, SQLITE_STATIC);
+  sqlite3_bind_double(stmt, 7, time(NULL)+options->cache_ttl);
+
+  /* execute */
+  bool success = (sqlite3_step(stmt) == SQLITE_DONE);
+  if(!success) D1("Execution error: %s", sqlite3_errmsg(db));
+  sqlite3_finalize(stmt);
+  return success;
 }
 
-/*
- * Check the cache entry:
- *       - /ega/cache/<username> exists
- *       - it is a dir
- *       - it is 700
- *       - (now - last_access) < CACHE_TTL
- */
-bool
-backend_user_found(const char* username){
-  D2("Looking for '%s'", username);
-  char* path = strjoina(options->cache_dir, "/", username);
-  D2("Cache entry for %s: %s", username, path);
+static inline int
+_col2txt(sqlite3_stmt **stmt, int col, char** data)
+{
+  D3("Convert column %d to txt", col);
+  if(sqlite3_column_type(*stmt, col) != SQLITE_TEXT){ D1("The colum %d is not a string", col); return 1; }
+  *data = (char*)sqlite3_column_text(*stmt, col);
+  if( *data == NULL ){ D1("Memory allocation error"); return 1; }
+  return 0;
+}
 
-  struct stat st;
-
-  /* Check path exists */
-  if( stat(path, &st) ){ 
-    if (errno != ENOENT){ D3("stat(%s) failed", path); }
-    return false;
-  }
-
-  /* Check if path is a directory and is -rwx  */
-  if( !S_ISDIR(st.st_mode) ){ D3("%s is not a directory", path); return false; }
-  if( (st.st_mode & (S_IRWXU|S_IRWXG|S_IRWXO)) != S_IRWXU ){ D3("%s is not 700", path); return false; }
-
-  D3("%s is a dir and 700", path);
-
-  D2("Checking cache TTL");
-
-  _cleanup_str_ char* last_accessed = NULL;
-  bool valid = false;
-  int rc = backend_get_item(username, LAST_ACCESSED, &last_accessed);
-  if(!last_accessed || rc < 0){ valid = false; }
-  else {
-    valid = ( difftime(time(NULL), ((time_t)strtol(last_accessed, NULL, 10))) < CACHE_TTL );
-  }
-  D1("Cache %s",(valid)?"valid":"too old");
-  return valid;
+static inline int
+_col2uid(sqlite3_stmt **stmt, int col, uid_t *uid)
+{
+  D3("Convert column %d to uid", col);
+  if(sqlite3_column_type(*stmt, col) != SQLITE_INTEGER){ D1("The colum %d is not a int", col); return 1; }
+  *uid = (uid_t)sqlite3_column_int(*stmt, col);
+  return 0;
 }
 
 /*
@@ -143,46 +162,144 @@ backend_user_found(const char* username){
  * We use -1 in case the buffer is too small
  *         0 on success
  *         1 on cache miss / user not found
+ *         error otherwise
  */
-int
-backend_convert(const char* username, struct passwd *result, char* buffer, size_t buflen)
+static int
+stmt2pwd(sqlite3_stmt** stmt, struct passwd *result, char *buffer, size_t buflen)
 {
-  int rc;
-  uid_t ega_uid; // unsigned int
-  if( !backend_user_found(username) ){ /* cache_miss */ return 1; }
+  char* username = NULL;
+  char* gecos = NULL;
+  char* shell = NULL;
+  uid_t uid = NULL; // unsigned int
 
-  _cleanup_str_ char* gecos = NULL;
-  _cleanup_str_ char* uid = NULL;
-  _cleanup_str_ char* shell = NULL;
+  D2("Convert SQL result to PASSWD result");
 
-  /* ok, cache found */
-  D3("Backend convert for %s", username);
-  if( copy2buffer(username, &(result->pw_name), &buffer, &buflen) < 0 ) { return -1; }
+  int errors = _col2txt(stmt, EGA_USERNAME, &username) +
+               _col2txt(stmt, EGA_GECOS   , &gecos   ) +
+               _col2txt(stmt, EGA_SHELL   , &shell   ) +
+               _col2uid(stmt, EGA_UID     , &uid     ) ;
+               
+  if( errors > 0 ){ D1("Found %d errors", errors); return 2; }
+  if( uid <= options->range_shift ){ D1("User id too low: %u", uid); return 2; }
+  D3("User id: %u", uid);
 
-  if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ) { return -1; }
+  char* homedir = strjoina(options->ega_dir, "/", username);
+  D3("Username %s [%s]", username, homedir);
 
-  rc = backend_get_item(username, EGA_GECOS, &gecos);
-  if(!gecos || rc < 0){ D1("Could not load the gecos information of '%s'", username); return -1; }
-  if( copy2buffer(gecos, &(result->pw_gecos), &buffer, &buflen) < 0 ) { return -1; }
-
-  rc = backend_get_item(username, EGA_SHELL, &shell);
-  if(!shell || rc < 0){ D1("Could not load the shell information of '%s'", username); return -1; }
-  if( copy2buffer(shell, &(result->pw_shell), &buffer, &buflen) < 0 ) { return -1; }
-
-  rc = backend_get_item(username, EGA_UID, &uid);
-  if(!uid || rc < 0){ D1("Could not load the user id of '%s'", username); return -1; }
-  if( !sscanf(uid, "%u" , &ega_uid) ){ D1("Could not convert the user id of '%s' to an int", username); return -1; }
-  D2("%s has user id %d", username, ega_uid);
-
-  result->pw_uid = ega_uid;
+  if( copy2buffer(username, &(result->pw_name)  , &buffer, &buflen) < 0 ) { return -1; }
+  if( copy2buffer("x"     , &(result->pw_passwd), &buffer, &buflen) < 0 ) { return -1; }
+  if( copy2buffer(gecos   , &(result->pw_gecos) , &buffer, &buflen) < 0 ) { return -1; }
+  if( copy2buffer(homedir , &(result->pw_dir)   , &buffer, &buflen) < 0 ) { return -1; }
+  if( copy2buffer(shell   , &(result->pw_shell) , &buffer, &buflen) < 0 ) { return -1; }
+  result->pw_uid = uid;
   result->pw_gid = options->ega_gid;
-
-  /* For the homedir: ega_dir/username */
-  if( copy2buffer(options->ega_dir, &(result->pw_dir), &buffer, &buflen) < 0 ) { return -1; }
-  *(buffer-1) = '/'; /* backtrack one char */
-  if( copy2buffer(username, NULL, &buffer, &buflen) < 0) { return -1; }
-
-  D2("Found: %s", username);
-
   return 0;
+}
+
+/*
+ * Check the cache entry not expired
+ */
+static inline bool
+backend_stmt_valid(sqlite3_stmt** stmt)
+{
+  /* cache miss */
+  if(sqlite3_step(*stmt) != SQLITE_ROW) { D2("No SQL row"); return false; }
+
+  /* checking expiration */
+  if(sqlite3_column_type(*stmt, EGA_EXPIRE) != SQLITE_FLOAT){ D1("The expiration is not a float"); return false; }
+  double expire = sqlite3_column_double(*stmt, EGA_EXPIRE);
+  if (difftime((time_t)expire, time(NULL)) < 0.0){ /* include case where expire failed and is the default value 0.0 */
+    D2("Cache too old"); return false;
+  }
+
+  /* valid entry */
+  D2("Cache valid");
+  return true;
+}
+
+static inline bool
+backend_get_uid(uid_t uid, sqlite3_stmt** stmt){
+  D2("select * from users where uid = %u LIMIT 1", uid);
+  sqlite3_prepare_v2(db, "select * from users where uid = ?1 LIMIT 1", -1, stmt, NULL);
+  if(*stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
+  sqlite3_bind_int(*stmt, 1, uid);
+  return backend_stmt_valid(stmt);
+}
+
+int backend_getpwuid_r(uid_t uid, struct passwd *result, char *buffer, size_t buflen)
+{
+  sqlite3_stmt *stmt = NULL;
+  int rc = 1; /* cache miss */
+  if(!backend_get_uid(uid, &stmt)) goto BAILOUT;
+  rc = stmt2pwd(&stmt, result, buffer, buflen);
+#ifdef DEBUG
+  if(rc == -1) D1("Buffer too small");
+  if(rc > 0) D1("Statement error");
+#endif
+BAILOUT:
+  sqlite3_finalize(stmt);
+  return rc;
+};
+
+bool
+backend_uid_found(uid_t uid)
+{
+  sqlite3_stmt *stmt = NULL;
+  bool success = backend_get_uid(uid, &stmt);
+  sqlite3_finalize(stmt);
+  return success;
+}
+
+static inline bool
+backend_get_username(const char* username, sqlite3_stmt** stmt){
+  D2("select * from users where username = %s LIMIT 1", username);
+  sqlite3_prepare_v2(db, "select * from users where username = ?1 LIMIT 1", -1, stmt, NULL);
+  if(*stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
+  sqlite3_bind_text(*stmt, 1, username, -1, SQLITE_STATIC);
+  return backend_stmt_valid(stmt);
+}
+
+int
+backend_getpwnam_r(const char* username, struct passwd *result, char* buffer, size_t buflen)
+{
+  sqlite3_stmt *stmt = NULL;
+  int rc = 1; /* cache miss */
+  if(!backend_get_username(username, &stmt)) goto BAILOUT;
+  rc = stmt2pwd(&stmt, result, buffer, buflen);
+#ifdef DEBUG
+  if(rc == -1) D1("Buffer too small");
+  if(rc > 0) D1("Statement error");
+#endif
+BAILOUT:
+  sqlite3_finalize(stmt);
+  return rc;
+}
+
+bool
+backend_username_found(const char* username)
+{
+  sqlite3_stmt *stmt = NULL;
+  bool success = backend_get_username(username, &stmt);
+  sqlite3_finalize(stmt);
+  return success;
+}
+
+int
+backend_get_password_hash(const char* username, char** data){
+  sqlite3_stmt *stmt = NULL;
+  int rc = 0;
+  if(!backend_get_username(username, &stmt))
+    rc = _col2txt(&stmt, EGA_PASSWD_H, data);
+  sqlite3_finalize(stmt);
+  return rc;
+}
+
+int
+backend_get_pubkey(const char* username, char** data){
+  sqlite3_stmt *stmt = NULL;
+  int rc = 0;
+  if(!backend_get_username(username, &stmt))
+    rc = _col2txt(&stmt, EGA_PUBKEY, data);
+  sqlite3_finalize(stmt);
+  return rc;
 }

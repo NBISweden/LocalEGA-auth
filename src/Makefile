@@ -12,8 +12,8 @@ KEYS_EXEC = ega_ssh_keys
 CC=gcc
 LD=ld
 AS=gcc -c
-CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -O2 -I.
-LIBS=-lpam -lcurl -ljq
+CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -O2
+LIBS=-lpam -lcurl -ljq -lsqlite3
 
 LIBDIR=/usr/local/lib/ega
 BINDIR=/usr/local/bin
@@ -53,7 +53,7 @@ $(PAM_LIBRARY): $(HEADERS) $(PAM_OBJECTS)
 
 $(KEYS_EXEC): $(HEADERS) $(KEYS_OBJECTS)
 	@echo "Creating $@"
-	@$(CC) -o $@ $(KEYS_OBJECTS)
+	@$(CC) -o $@ $(LIBS) $(KEYS_OBJECTS)
 
 blowfish/x86.o: blowfish/x86.S $(HEADERS)
 	@echo "Compiling $<"

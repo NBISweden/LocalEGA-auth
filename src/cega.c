@@ -56,18 +56,13 @@ get_from_json(jq_state *jq, const char* query, jv json, char** res){
     case JV_KIND_NUMBER:
 	D3("Processing a number");
 	int uid = jv_number_value(result); // consumed
-	int uid_length = snprintf( NULL, 0, "%d", uid); // how many character do we need
-	D3("Value %d needs %d characters", uid, uid_length);
-	if (uid_length < 0) { D2("Unable to convert the user id to a number"); return -1; }
-	*res = malloc( uid_length + 1 ); // for \0
-	if (snprintf( *res, uid_length + 1, "%d", uid ) < 0) { D2("Unable to convert the user id to a number"); return -1; }
+	uidtostr( uid, res );
 	break;
 
     default:
       D3("Valid result but not a string, nor a number");
       //jv_dump(result, 0);
       jv_free(result);
-      return -1;
     }
   }
   D3("Valid result: %s", *res);
@@ -143,9 +138,9 @@ fetch_from_cega(const char *username)
   int rc = 
     get_from_json(jq, options->cega_json_passwd, jv_copy(parsed_response), &pwd   ) +
     get_from_json(jq, options->cega_json_pubkey, jv_copy(parsed_response), &pbk   ) +
+    get_from_json(jq, options->cega_json_uid   , jv_copy(parsed_response), &uid   ) +
     get_from_json(jq, options->cega_json_gecos , jv_copy(parsed_response), &gecos ) +
-    get_from_json(jq, options->cega_json_shell , jv_copy(parsed_response), &shell ) +
-    get_from_json(jq, options->cega_json_uid   , jv_copy(parsed_response), &uid   );
+    get_from_json(jq, options->cega_json_shell , jv_copy(parsed_response), &shell ) ;
 
   if(rc){
     D1("WARNING: CentralEGA JSON received, but parsed with %d invalid quer%s", rc, (rc>1)?"ies":"y");
@@ -156,7 +151,6 @@ fetch_from_cega(const char *username)
   jv_free(parsed_response);
 
   /* Adding to the database, if pwd and pbk are not both null */
-
   status = (pwd || pbk) && uid && gecos && shell && backend_add_user(username, uid, pwd, pbk, gecos, shell);
 
 BAILOUT:

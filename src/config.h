@@ -9,25 +9,19 @@
 #define CEGA_CERT "/etc/ega/cega.pem"
 #define PROMPT "Please, enter your EGA password: "
 
-#define CACHE_DIR "/ega/cache"
 #define CACHE_TTL 3600.0 // 1h in seconds.
-#define PUBKEY        "pubkey"
-#define PASSWORD      "pwd"
-#define LAST_ACCESSED "last"
-#define EGA_UID       "uid"
-#define EGA_GECOS     "gecos"
-#define EGA_SHELL     "shell"
+#define RANGE_SHIFT 10000
 
 struct options_s {
   char* cfgfile;
   char* buffer;
   
-  gid_t ega_gid;
-
+  gid_t ega_gid;           /* group id for all EGA users */
   double cache_ttl;        /* How long a cache entry is valid (in seconds) */
+  int range_shift;         /* added to the user id from CentralEGA */
   char* prompt;            /* Please enter password */
 
-  char* cache_dir;         /* Cache directory for EGA users */
+  char* db_connstr;        /* db connection string */
 
   char* ega_dir;           /* EGA main inbox directory */
   long int ega_dir_attrs;  /* in octal form */
@@ -52,9 +46,6 @@ extern options_t* options;
 
 bool loadconfig(void);
 void cleanconfig(void);
-bool config_not_loaded(void);
-
-static inline void clean_conf(options_t** p){ D3("Cleaning configuration [%p]", *p); cleanconfig(); }
-#define _cleanup_conf_ __attribute__((cleanup(clean_conf)))
+bool config_loaded(void);
 
 #endif /* !__LEGA_CONFIG_H_INCLUDED__ */

@@ -20,7 +20,6 @@
 #include <security/pam_modutil.h>
 
 #include "utils.h"
-#include "config.h"
 #include "backend.h"
 #include "blowfish/ow-crypt.h"
 
@@ -99,7 +98,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   }
 
   _cleanup_str_ char* pwdh = NULL;
-  if( config_not_loaded() ) return PAM_AUTH_ERR;
+  if( !backend_opened() ) return PAM_AUTH_ERR;
 
   D1("Asking %s for password", user);
 
@@ -136,7 +135,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   /* Now, we have the password */
   D1("Authenticating user %s with password", user);
 
-  rc = backend_get_item(user, PASSWORD, &pwdh);
+  rc = backend_get_password_hash(user, &pwdh);
 
   if(!pwdh || rc < 0){ D1("Could not load the password hash of '%s'", user); return PAM_AUTH_ERR; }
 
@@ -148,41 +147,12 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   } else {
     D2("Using libc: supporting MD5, SHA256, SHA512");
     if (!strcmp(pwdh, crypt(password, pwdh))){ return PAM_SUCCESS; }
+    D2("Original hash: %s", pwdh);
+    D2("Computed hash: %s", crypt(password, pwdh));
   }
 
   D1("Authentication failed for %s", user);
   return PAM_AUTH_ERR;
-}
-
-/*
- * Refresh user cache entry, if it exists
- * Note: setcred runs before and after session_open
- * which means, 'after' is in a chrooted-env, so setcred fails
- * (but before succeeds)
- * So a user is refreshed right before an attempts to open a session,
- * right after a successful authentication
- */
-PAM_EXTERN int
-pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
-{
-  int rc;
-  const char *username;
-  int mflags = 0;
-
-  D1("Getting setcred PAM module options");
-  pam_options(&mflags, argc, argv);
-
-  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
-
-  if( config_not_loaded() ) return PAM_CRED_UNAVAIL;
-
-  if( !backend_user_found(username) ){ D1("'%s' not found", username); return PAM_USER_UNKNOWN; }
-
-  D1("Refreshing user %s", username);
-
-  char seconds[65];
-  sprintf(seconds, "%ld", time(NULL));
-  return (backend_set_item(username, LAST_ACCESSED, seconds) < 0)?PAM_CRED_EXPIRED:PAM_SUCCESS;
 }
 
 /*
@@ -202,7 +172,7 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  if( config_not_loaded() ) return PAM_SESSION_ERR;
+  if( !backend_opened() ) return PAM_SESSION_ERR;
 
   /* Construct mountpoint and rootdir_options */
   mountpoint = strjoina(options->ega_dir, "/", username);
@@ -266,5 +236,33 @@ PAM_EXTERN int
 pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
   D1("Account: allowed");
+  return PAM_SUCCESS;
+}
+
+/*
+ * Refresh user cache entry, if it exists
+ * Note: setcred runs before and after session_open
+ * which means, 'after' is in a chrooted-env, so setcred fails
+ * (but before succeeds)
+ * So a user is refreshed right before an attempts to open a session,
+ * right after a successful authentication
+ */
+PAM_EXTERN int
+pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
+{
+  int rc;
+  const char *username;
+  int mflags = 0;
+
+  D1("Getting setcred PAM module options");
+  pam_options(&mflags, argc, argv);
+
+  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+
+  if( !backend_opened() ) return PAM_CRED_UNAVAIL;
+
+  if( !backend_username_found(username) ){ D1("'%s' not found", username); return PAM_USER_UNKNOWN; }
+
+  D1("Set cred: %s allowed", username);
   return PAM_SUCCESS;
 }
