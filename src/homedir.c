@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <pwd.h>
+#include <unistd.h>
 
 #include "utils.h"
 #include "config.h"
