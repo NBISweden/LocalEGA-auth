@@ -1,13 +1,7 @@
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdbool.h>
-
 #include <curl/curl.h>
 #include <jq.h>
 
 #include "utils.h"
-#include "config.h"
 #include "backend.h"
 
 struct curl_res_s {

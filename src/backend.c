@@ -1,9 +1,4 @@
-#include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-#include <errno.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include <time.h>
 #include <sqlite3.h>
 
@@ -288,8 +283,9 @@ int
 backend_get_password_hash(const char* username, char** data){
   sqlite3_stmt *stmt = NULL;
   int rc = 0;
-  if(!backend_get_username(username, &stmt))
+  if(backend_get_username(username, &stmt))
     rc = _col2txt(&stmt, EGA_PASSWD_H, data);
+  *data = strdup(*data);
   sqlite3_finalize(stmt);
   return rc;
 }
@@ -298,8 +294,9 @@ int
 backend_get_pubkey(const char* username, char** data){
   sqlite3_stmt *stmt = NULL;
   int rc = 0;
-  if(!backend_get_username(username, &stmt))
+  if(backend_get_username(username, &stmt))
     rc = _col2txt(&stmt, EGA_PUBKEY, data);
+  *data = strdup(*data);
   sqlite3_finalize(stmt);
   return rc;
 }

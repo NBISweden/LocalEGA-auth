@@ -1,3 +1,4 @@
+
 #ifndef __LEGA_CONFIG_H_INCLUDED__
 #define __LEGA_CONFIG_H_INCLUDED__
 

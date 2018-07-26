@@ -1,10 +1,6 @@
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
 #include <stdbool.h>
 #include <errno.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <pwd.h>
 
 #include "utils.h"

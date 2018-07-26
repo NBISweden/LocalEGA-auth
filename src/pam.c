@@ -136,6 +136,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   D1("Authenticating user %s with password", user);
 
   rc = backend_get_password_hash(user, &pwdh);
+  D2("Passwd hash: %s", pwdh);
 
   if(!pwdh || rc < 0){ D1("Could not load the password hash of '%s'", user); return PAM_AUTH_ERR; }
 

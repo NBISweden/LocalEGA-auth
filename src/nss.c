@@ -1,10 +1,8 @@
 #include <nss.h>
 #include <pwd.h>
-#include <string.h>
 #include <errno.h>
 
 #include "utils.h"
-#include "config.h"
 #include "backend.h"
 #include "cega.h"
 #include "homedir.h"
