@@ -3,6 +3,6 @@
 
 #include <stdbool.h>
 
-bool fetch_from_cega(const char *username);
+bool fetch_from_cega(const char *username, struct passwd *result, char *buffer, size_t buflen);
 
 #endif /* !__LEGA_CENTRAL_H_INCLUDED__ */

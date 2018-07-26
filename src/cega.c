@@ -1,5 +1,6 @@
 #include <curl/curl.h>
 #include <jq.h>
+#include <pwd.h>
 
 #include "utils.h"
 #include "backend.h"
@@ -63,12 +64,12 @@ get_from_json(jq_state *jq, const char* query, jv json, char** res){
   return 0;
 }
 
-bool
-fetch_from_cega(const char *username)
+int
+fetch_from_cega(const char *username, struct passwd *result, char *buffer, size_t buflen)
 {
   CURL *curl;
   CURLcode res;
-  bool status = false;
+  int rc = 1; /* 1 = error */
   char* endpoint = NULL;
   struct curl_res_s *cres = NULL;
   jv parsed_response;
@@ -77,9 +78,8 @@ fetch_from_cega(const char *username)
   char *pbk = NULL;
   char *uid = NULL;
   char *gecos = NULL;
-  char *shell = NULL;
   
-  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return false; }
+  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return 1; }
 
   D1("Contacting cega for user: %s", username);
 
@@ -129,12 +129,11 @@ fetch_from_cega(const char *username)
   jq = jq_init();
   if (jq == NULL) { D2("jq error with malloc"); goto BAILOUT; }
 
-  int rc = 
+  rc = 
     get_from_json(jq, options->cega_json_passwd, jv_copy(parsed_response), &pwd   ) +
     get_from_json(jq, options->cega_json_pubkey, jv_copy(parsed_response), &pbk   ) +
     get_from_json(jq, options->cega_json_uid   , jv_copy(parsed_response), &uid   ) +
-    get_from_json(jq, options->cega_json_gecos , jv_copy(parsed_response), &gecos ) +
-    get_from_json(jq, options->cega_json_shell , jv_copy(parsed_response), &shell ) ;
+    get_from_json(jq, options->cega_json_gecos , jv_copy(parsed_response), &gecos ) ;
 
   if(rc){
     D1("WARNING: CentralEGA JSON received, but parsed with %d invalid quer%s", rc, (rc>1)?"ies":"y");
@@ -144,15 +143,37 @@ fetch_from_cega(const char *username)
 
   jv_free(parsed_response);
 
-  /* Adding to the database, if pwd and pbk are not both null */
-  status = (pwd || pbk) && uid && gecos && shell && backend_add_user(username, uid, pwd, pbk, gecos, shell);
+  /* conversion to uid_t */
+  uid_t ega_uid;
+  if(!uid || rc){ D1("Could not load the user id of '%s'", username); goto BAILOUT; }
+  if( !sscanf(uid, "%u" , &ega_uid) ){ D1("Could not convert the user id of '%s' to an int", username); rc = 1; goto BAILOUT; }
+  ega_uid += options->range_shift;
+  D2("%s has user id %d", username, ega_uid);
+
+  /* Checking the data */
+  if( (!pwd && !pbk) || !username || !gecos || ega_uid <= options->range_shift ){ rc = 1; goto BAILOUT; }
+
+  /* Filling the struct passwd */
+  D1("Making the struct passwd for user '%s'", username);
+  char* homedir = strjoina(options->ega_dir, "/", username);
+  D3("Username %s [%s]", username, homedir);
+  if( copy2buffer(username, &(result->pw_name)  , &buffer, &buflen) < 0 ) { rc = -1; goto BAILOUT; }
+  if( copy2buffer("x"     , &(result->pw_passwd), &buffer, &buflen) < 0 ) { rc = -1; goto BAILOUT; }
+  if( copy2buffer(gecos   , &(result->pw_gecos) , &buffer, &buflen) < 0 ) { rc = -1; goto BAILOUT; }
+  if( copy2buffer(homedir , &(result->pw_dir)   , &buffer, &buflen) < 0 ) { rc = -1; goto BAILOUT; }
+  if( copy2buffer(options->shell, &(result->pw_shell) , &buffer, &buflen) < 0 ) { rc = -1; goto BAILOUT; }
+  result->pw_uid = ega_uid;
+  result->pw_gid = options->ega_gid;
+
+  /* Adding to the database */
+  rc = backend_add_user(username, ega_uid, pwd, pbk, gecos);
 
 BAILOUT:
-  D1("User %s%s found in CentralEGA", username, (status)?"":" not");
+  D1("User %s%s found in CentralEGA", username, (rc==0)?"":" not");
   if(cres)free(cres);
   if(uid)free(uid); // The others are freed by jv
   jq_teardown(&jq); /* should free pwd and pbk */
   curl_easy_cleanup(curl);
   curl_global_cleanup();
-  return status;
+  return rc;
 }

@@ -7,13 +7,12 @@
 
 
 /* DB schema */
-#define EGA_SCHEMA "CREATE TABLE IF NOT EXISTS users (username TEXT UNIQUE PRIMARY KEY, \
-                                                      uid      INTEGER UNIQUE,          \
+#define EGA_SCHEMA "CREATE TABLE IF NOT EXISTS users (username TEXT UNIQUE PRIMARY KEY ON CONFLICT REPLACE, \
+                                                      uid      INTEGER,                 \
                     		 		      pwdh     TEXT,	                \
 		                    		      pubkey   TEXT,	                \
 				                      gecos    TEXT,                    \
-		                    		      shell    TEXT,                    \
-                    				      expire   REAL);"
+                    				      inserted REAL DEFAULT (strftime('%s','now'))) WITHOUT ROWID;"
 
 /* WITHOUT ROWID works only from 3.8.2 */
 
@@ -23,8 +22,7 @@
 #define EGA_PASSWD_H 2
 #define EGA_PUBKEY   3
 #define EGA_GECOS    4
-#define EGA_SHELL    5
-#define EGA_EXPIRE   6
+#define EGA_CREATED  5
 
 static sqlite3* db = NULL;
 
@@ -93,28 +91,19 @@ backend_close(void)
 /*
  * Assumes config file already loaded and backend open
  */
-bool
+int
 backend_add_user(const char* username,
-		 const char* uid_s,
+		 uid_t uid,
 		 const char* pwdh,
 		 const char* pubkey,
-		 const char* gecos,
-		 const char* shell)
+		 const char* gecos)
 {
-
-  /* conversion to uid_t */
-  uid_t uid;
-  if(!uid_s){ D1("Could not load the user id of '%s'", username); return false; }
-  if( !sscanf(uid_s, "%u" , &uid) ){ D1("Could not convert the user id of '%s' to an int", username); return false; }
-  uid += options->range_shift;
-  D2("%s has user id %d", username, uid);
-
   sqlite3_stmt *stmt = NULL;
 
   D1("Insert %s into cache", username);
 
-  /* The entry should not be there */
-  sqlite3_prepare_v2(db, "INSERT INTO users (username,uid,pwdh,pubkey,gecos,shell,expire) VALUES(?1,?2,?3,?4,?5,?6,?7)", -1, &stmt, NULL);
+  /* The entry will be updated if already present */
+  sqlite3_prepare_v2(db, "INSERT INTO users (username,uid,pwdh,pubkey,gecos) VALUES(?1,?2,?3,?4,?5)", -1, &stmt, NULL);
   if(!stmt){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
 
   sqlite3_bind_text(stmt,   1, username, -1, SQLITE_STATIC);
@@ -122,14 +111,22 @@ backend_add_user(const char* username,
   sqlite3_bind_text(stmt,   3, pwdh    , -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt,   4, pubkey  , -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt,   5, gecos   , -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt,   6, shell   , -1, SQLITE_STATIC);
-  sqlite3_bind_double(stmt, 7, time(NULL)+options->cache_ttl);
 
-  /* execute */
-  bool success = (sqlite3_step(stmt) == SQLITE_DONE);
-  if(!success) D1("Execution error: %s", sqlite3_errmsg(db));
+  /* We should acquire a RESERVED lock.
+     See: https://www.sqlite.org/lockingv3.html#writing
+     When the lock is taken, the database returns SQLITE_BUSY.
+     So...
+     That should be ok with a busy-loop. (Alternative: sleep(0.5)).
+     It is highly unlikely that this process will starve.
+     All other process will not keep the database busy forever.
+  */
+  while( sqlite3_step(stmt) == SQLITE_BUSY ); // a RESERVED lock is taken
+
+  /* Execute the query. */
+  int rc = (sqlite3_step(stmt) == SQLITE_DONE)?0:1;
+  if(rc) D1("Execution error: %s", sqlite3_errmsg(db));
   sqlite3_finalize(stmt);
-  return success;
+  return rc;
 }
 
 static inline int
@@ -164,14 +161,12 @@ stmt2pwd(sqlite3_stmt** stmt, struct passwd *result, char *buffer, size_t buflen
 {
   char* username = NULL;
   char* gecos = NULL;
-  char* shell = NULL;
   uid_t uid = NULL; // unsigned int
 
   D2("Convert SQL result to PASSWD result");
 
   int errors = _col2txt(stmt, EGA_USERNAME, &username) +
                _col2txt(stmt, EGA_GECOS   , &gecos   ) +
-               _col2txt(stmt, EGA_SHELL   , &shell   ) +
                _col2uid(stmt, EGA_UID     , &uid     ) ;
                
   if( errors > 0 ){ D1("Found %d errors", errors); return 2; }
@@ -185,7 +180,7 @@ stmt2pwd(sqlite3_stmt** stmt, struct passwd *result, char *buffer, size_t buflen
   if( copy2buffer("x"     , &(result->pw_passwd), &buffer, &buflen) < 0 ) { return -1; }
   if( copy2buffer(gecos   , &(result->pw_gecos) , &buffer, &buflen) < 0 ) { return -1; }
   if( copy2buffer(homedir , &(result->pw_dir)   , &buffer, &buflen) < 0 ) { return -1; }
-  if( copy2buffer(shell   , &(result->pw_shell) , &buffer, &buflen) < 0 ) { return -1; }
+  if( copy2buffer(options->shell, &(result->pw_shell) , &buffer, &buflen) < 0 ) { return -1; }
   result->pw_uid = uid;
   result->pw_gid = options->ega_gid;
   return 0;
@@ -201,11 +196,16 @@ backend_stmt_valid(sqlite3_stmt** stmt)
   if(sqlite3_step(*stmt) != SQLITE_ROW) { D2("No SQL row"); return false; }
 
   /* checking expiration */
-  if(sqlite3_column_type(*stmt, EGA_EXPIRE) != SQLITE_FLOAT){ D1("The expiration is not a float"); return false; }
-  double expire = sqlite3_column_double(*stmt, EGA_EXPIRE);
-  if (difftime((time_t)expire, time(NULL)) < 0.0){ /* include case where expire failed and is the default value 0.0 */
+  if(sqlite3_column_type(*stmt, EGA_CREATED) != SQLITE_FLOAT){ D1("The expiration is not a float"); return false; }
+  double created_at = (time_t)sqlite3_column_double(*stmt, EGA_CREATED);
+  time_t now = time(NULL);
+  if ( difftime(now, created_at) > options->cache_ttl ){
+    /* include case where expire failed and is the default value 0.0 */
     D2("Cache too old"); return false;
   }
+
+  D1("Cache creation time: %f", created_at);
+  D1("Cache  current time: %lld", (long long int) now);
 
   /* valid entry */
   D2("Cache valid");

@@ -12,6 +12,7 @@
 
 #define CACHE_TTL 3600.0 // 1h in seconds.
 #define RANGE_SHIFT 10000
+#define USER_SHELL "/bin/bash"
 
 struct options_s {
   char* cfgfile;
@@ -21,6 +22,7 @@ struct options_s {
   double cache_ttl;        /* How long a cache entry is valid (in seconds) */
   int range_shift;         /* added to the user id from CentralEGA */
   char* prompt;            /* Please enter password */
+  char* shell;             /* Please enter password */
 
   char* db_connstr;        /* db connection string */
 
@@ -37,7 +39,6 @@ struct options_s {
   char* cega_json_pubkey;  /* Searching with jq for the public key field */
   char* cega_json_uid;     /* Searching with jq for the user id field */
   char* cega_json_gecos;   /* Searching with jq for the gecos field */
-  char* cega_json_shell;   /* Searching with jq for the shell field */
   char* ssl_cert;          /* path the SSL certificate to contact Central EGA */
 };
 

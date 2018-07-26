@@ -12,11 +12,11 @@ KEYS_EXEC = ega_ssh_keys
 CC=gcc
 LD=ld
 AS=gcc -c
-CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -O2
-LIBS=-lpam -lcurl -ljq -lsqlite3
+CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2
+LIBS=-lpam -lcurl -ljq -L/usr/local/lib -lsqlite3
 
-LIBDIR=/usr/local/lib/ega
-BINDIR=/usr/local/bin
+EGA_LIBDIR=/usr/local/lib/ega
+EGA_BINDIR=/usr/local/bin
 
 HEADERS = utils.h config.h backend.h cega.h homedir.h $(wildcard blowfish/*.h)
 
@@ -51,9 +51,9 @@ $(PAM_LIBRARY): $(HEADERS) $(PAM_OBJECTS)
 	@echo "Linking objects into $@"
 	@$(LD) -x --shared -o $@ $(LIBS) $(PAM_OBJECTS)
 
-$(KEYS_EXEC): $(HEADERS) $(KEYS_OBJECTS)
+$(KEYS_EXEC): $(HEADERS) $(KEYS_OBJECTS) 
 	@echo "Creating $@"
-	@$(CC) -o $@ $(LIBS) $(KEYS_OBJECTS)
+	@$(CC) -o $@ $(KEYS_OBJECTS) $(LIBS)
 
 blowfish/x86.o: blowfish/x86.S $(HEADERS)
 	@echo "Compiling $<"
@@ -64,19 +64,19 @@ blowfish/x86.o: blowfish/x86.S $(HEADERS)
 	@$(CC) $(CFLAGS) -c -o $@ $<
 
 install-nss: $(NSS_LIBRARY)
-	@[ -d $(LIBDIR) ] || { echo "Creating lib dir: $(LIBDIR)"; install -d $(LIBDIR); }
-	@echo "Installing $< into $(LIBDIR)"
-	@install $< $(LIBDIR)
+	@[ -d $(EGA_LIBDIR) ] || { echo "Creating lib dir: $(EGA_LIBDIR)"; install -d $(EGA_LIBDIR); }
+	@echo "Installing $< into $(EGA_LIBDIR)"
+	@install $< $(EGA_LIBDIR)
 
 install-pam: $(PAM_LIBRARY)
-	@[ -d $(LIBDIR) ] || { echo "Creating lib dir: $(LIBDIR)"; install -d $(LIBDIR); }
-	@echo "Installing $< into $(LIBDIR)"
-	@install $< $(LIBDIR)
+	@[ -d $(EGA_LIBDIR) ] || { echo "Creating lib dir: $(EGA_LIBDIR)"; install -d $(EGA_LIBDIR); }
+	@echo "Installing $< into $(EGA_LIBDIR)"
+	@install $< $(EGA_LIBDIR)
 
 install-keys: $(KEYS_EXEC)
-	@[ -d $(BINDIR) ] || { echo "Creating bin dir: $(BINDIR)"; install -d $(BINDIR); }
-	@echo "Installing $< into $(BINDIR)"
-	@install -m 700 $< $(BINDIR)
+	@[ -d $(EGA_BINDIR) ] || { echo "Creating bin dir: $(EGA_BINDIR)"; install -d $(EGA_BINDIR); }
+	@echo "Installing $< into $(EGA_BINDIR)"
+	@install -m 700 $< $(EGA_BINDIR)
 
 install: install-nss install-pam install-keys
 	@echo "Do not forget to run ldconfig and create/configure the file /etc/ega/auth.conf"

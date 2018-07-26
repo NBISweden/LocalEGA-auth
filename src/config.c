@@ -49,6 +49,7 @@ valid_options(void)
   if(!options->db_connstr        ) { D3("Invalid db_connstr");       valid = false; }
 
   if(!options->ega_gid           ) { D3("Invalid ega_gid");          valid = false; }
+  if(!options->shell             ) { D3("Invalid shell");            valid = false; }
 
   if(!options->cega_endpoint     ) { D3("Invalid cega_endpoint");    valid = false; }
   if(!options->cega_creds        ) { D3("Invalid cega_creds");       valid = false; }
@@ -56,7 +57,6 @@ valid_options(void)
   if(!options->cega_json_pubkey  ) { D3("Invalid cega_json_pubkey"); valid = false; }
   if(!options->cega_json_uid     ) { D3("Invalid cega_json_uid");    valid = false; }
   if(!options->cega_json_gecos   ) { D3("Invalid cega_json_gecos");  valid = false; }
-  if(!options->cega_json_shell   ) { D3("Invalid cega_json_shell");  valid = false; }
 
   /* if(options->ssl_cert          ) { D3("Invalid ssl_cert");      valid = false; } */
 
@@ -83,6 +83,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   COPYVAL(CFGFILE   , options->cfgfile   );
   COPYVAL(PROMPT    , options->prompt    );
   COPYVAL(CEGA_CERT , options->ssl_cert  );
+  COPYVAL(USER_SHELL, options->shell     );
 
   /* Parse line by line */
   while (getline(&line, &len, fp) > 0) {
@@ -120,12 +121,12 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     INJECT_OPTION(key, "ega_fuse_exec"    , val, options->ega_fuse_exec    );
     INJECT_OPTION(key, "ega_fuse_flags"   , val, options->ega_fuse_flags   );
     INJECT_OPTION(key, "prompt"           , val, options->prompt           );
+    INJECT_OPTION(key, "user_shell"       , val, options->shell            );
     INJECT_OPTION(key, "cega_endpoint"    , val, options->cega_endpoint    );
     INJECT_OPTION(key, "cega_creds"       , val, options->cega_creds       );
     INJECT_OPTION(key, "cega_json_passwd" , val, options->cega_json_passwd );
     INJECT_OPTION(key, "cega_json_pubkey" , val, options->cega_json_pubkey );
     INJECT_OPTION(key, "cega_json_gecos"  , val, options->cega_json_gecos  );
-    INJECT_OPTION(key, "cega_json_shell"  , val, options->cega_json_shell  );
     INJECT_OPTION(key, "cega_json_uid"    , val, options->cega_json_uid    );
     INJECT_OPTION(key, "ssl_cert"         , val, options->ssl_cert         );
 

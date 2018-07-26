@@ -95,13 +95,8 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
   }
 
   /* Contacting CentralEGA */
-  if( !fetch_from_cega(username) ){ D1("Could not fetch user from CentralEGA"); return NSS_STATUS_NOTFOUND; }
-
-  D1("Trying cache again");
   *errnop = 0;
-  
-  /* User retrieved from Central EGA, try again the cache */
-  int rc = backend_getpwnam_r(username, result, buffer, buflen);
+  int rc = fetch_from_cega(username, result, buffer, buflen);
 
   if(rc == -1){ *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
 
@@ -114,7 +109,7 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
     return NSS_STATUS_NOTFOUND;
   }
   
-  D1("No luck, user %s not found", username);
+  D1("Could not fetch user %s from CentralEGA", username);
   return NSS_STATUS_NOTFOUND;
 }
 
