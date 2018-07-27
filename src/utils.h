@@ -1,21 +1,28 @@
 #ifndef __LEGA_UTILS_H_INCLUDED__
 #define __LEGA_UTILS_H_INCLUDED__
 
-#include <syslog.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <alloca.h>
+#include <unistd.h>
 
 #define _XOPEN_SOURCE 700 /* for stpcpy */
 #include <string.h>
 #include <stdio.h>
+
+#ifdef PROGRESS
+#undef PROGRESS
+#define PROGRESS(fmt, ...) fprintf(stderr, "[%d] "fmt"\n", getpid(), ##__VA_ARGS__)
+#else
+#undef PROGRESS
+#define PROGRESS(...)
+#endif
 
 #define D1(...)
 #define D2(...)
 #define D3(...)
 
 #ifdef DEBUG
-#include <unistd.h>
 
 #if DEBUG > 0
 #undef D1
@@ -89,22 +96,5 @@ copy2buffer(const char* data, char** dest, char **bufptr, size_t *buflen)
   
   return slen;
 }
-
-static inline int
-uidtostr(const int uid, char** data)
-{
-  int uid_length = snprintf( NULL, 0, "%d", uid); // how many character do we need
-  D3("Value %d needs %d characters", uid, uid_length);
-  if (uid_length < 0) { D2("Unable to convert the user id to a number"); return -1; }
-  *data = malloc( uid_length + 1 ); // for \0
-  memset(*data, '\0', uid_length + 1);
-  if (snprintf( *data, uid_length + 1, "%d", uid ) < 0) { D2("Unable to convert the user id to a number"); return -1; }
-  return 0;
-}
-
-#define SUCCESS 0
-#define BUFFER_TOO_SMALL -1
-#define USER_NOT_FOUND 1
-#define CACHE_EXPIRED 2
 
 #endif /* !__LEGA_UTILS_H_INCLUDED__ */

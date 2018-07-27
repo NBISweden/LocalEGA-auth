@@ -1,6 +1,7 @@
 #include <nss.h>
 #include <pwd.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 #include "utils.h"
 #include "backend.h"
@@ -39,7 +40,6 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
 {
   /* bail out if we're looking for the root user */
   /* if( !strcmp(username, "root") ){ D1("bail out when root"); return NSS_STATUS_NOTFOUND; } */
-  /* if( !strcmp(username, "ega")  ){ D1("bail out when ega");  return NSS_STATUS_NOTFOUND; } */
 
   D1("Looking up user id %d", uid);
 
@@ -55,10 +55,8 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
   case 0: /* User found in cache */
     D1("User found in cache");
     *errnop = 0; return NSS_STATUS_SUCCESS;
-    break; 
-  default: /* User not found in cache */
-    D1("User not found in cache");
-    break; 
+    break;
+  default: break;
   }
 
   D1("No luck, user id %d not found", uid);
@@ -70,47 +68,54 @@ enum nss_status
 _nss_ega_getpwnam_r(const char *username, struct passwd *result,
 		    char *buffer, size_t buflen, int *errnop)
 {
+  D3("initial buffer size: %zd", buflen);
+
   /* bail out if we're looking for the root user */
   /* if( !strcmp(username, "root") ){ D1("bail out when root"); return NSS_STATUS_NOTFOUND; } */
-  /* if( !strcmp(username, "ega")  ){ D1("bail out when ega");  return NSS_STATUS_NOTFOUND; } */
 
   D1("Looking up '%s'", username);
-
-  if( !backend_opened() ) return NSS_STATUS_UNAVAIL;
-
-  D3("initial buffer size: %zd", buflen);
   /* memset(buffer, '\0', buflen); */
 
-  switch(backend_getpwnam_r(username, result, buffer, buflen)){
-  case -1:
-    *errnop = ERANGE; return NSS_STATUS_TRYAGAIN;
-    break;
-  case 0: /* User found in cache */
-    D1("User found in cache");
-    *errnop = 0; return NSS_STATUS_SUCCESS;
-    break; 
-  default: /* User not found in cache */
-    D1("User not found in cache");
-    break; 
+  bool use_backend = backend_opened();
+  int rc = 1;
+  if(use_backend){
+    
+    rc = backend_getpwnam_r(username, result, buffer, buflen);
+    if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+    if( rc == 0  ){ PROGRESS("User %s found in cache", username); *errnop = 0; return NSS_STATUS_SUCCESS; }
+    
   }
 
-  /* Contacting CentralEGA */
-  *errnop = 0;
-  int rc = fetch_from_cega(username, result, buffer, buflen);
+  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return NSS_STATUS_UNAVAIL; }
 
-  if(rc == -1){ *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+  /* Defining the callback */
+  int cega_callback(uid_t uid, char* password_hash, char* pubkey, char* gecos){
 
-  if( rc == 0 ){
-    bool dir_present = create_ega_dir(result, options->ega_dir_attrs);
-    if( dir_present ){
-      D1("Success! User %s found", username);
-      *errnop = 0; return NSS_STATUS_SUCCESS;
-    }
-    return NSS_STATUS_NOTFOUND;
-  }
+    /* Add to database. Ignore result.
+     In case the buffer is too small later, it'll fetch the same data from the cache, next time. */
+    if(use_backend) backend_add_user(username, uid, password_hash, pubkey, gecos);
+
+    /* Prepare the answer */
+    char* homedir = strjoina(options->ega_dir, "/", username);
+    D3("Username %s [%s]", username, homedir);
+    result->pw_name = (char*)username; /* no need to copy to buffer */
+    result->pw_uid = uid;
+    result->pw_gid = options->gid;
+    if( copy2buffer(homedir, &(result->pw_dir)   , &buffer, &buflen) < 0 ) { return -1; }
+    if( copy2buffer(gecos,   &(result->pw_gecos) , &buffer, &buflen) < 0 ) { return -1; }
+    if( copy2buffer(options->shell, &(result->pw_shell), &buffer, &buflen) < 0 ) { return -1; }
   
-  D1("Could not fetch user %s from CentralEGA", username);
-  return NSS_STATUS_NOTFOUND;
+    /* make sure the homedir is created */
+    create_ega_dir(result); // ignore output, in nss case
+    return 0;
+  }
+
+  rc = cega_get_username(username, cega_callback);
+  if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+  if( rc > 0 ) { D1("User %s not found in CentralEGA", username); return NSS_STATUS_NOTFOUND; }
+  PROGRESS("User %s found in CentralEGA", username);
+  *errnop = 0;
+  return NSS_STATUS_SUCCESS;
 }
 
 /*

@@ -19,9 +19,10 @@
 #include <security/pam_ext.h>
 #include <security/pam_modutil.h>
 
+#include "blowfish/ow-crypt.h"
 #include "utils.h"
 #include "backend.h"
-#include "blowfish/ow-crypt.h"
+#include "cega.h"
 
 #define PAM_OPT_DEBUG			0x01
 #define PAM_OPT_USE_FIRST_PASS		0x02
@@ -54,6 +55,10 @@ void pam_options(int *flags, int argc, const char **argv)
   }
   return;
 }
+
+/* prototype definitions. See the end of the file */
+static int _get_password_hash(const char* username, char** data);
+
 
 /*
  * authenticate user
@@ -97,9 +102,6 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
     return PAM_AUTH_ERR;
   }
 
-  _cleanup_str_ char* pwdh = NULL;
-  if( !backend_opened() ) return PAM_AUTH_ERR;
-
   D1("Asking %s for password", user);
 
   /* Get the password then */
@@ -135,7 +137,8 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   /* Now, we have the password */
   D1("Authenticating user %s with password", user);
 
-  rc = backend_get_password_hash(user, &pwdh);
+  _cleanup_str_ char* pwdh = NULL;
+  rc = _get_password_hash(user, &pwdh);
   D2("Passwd hash: %s", pwdh);
 
   if(!pwdh || rc < 0){ D1("Could not load the password hash of '%s'", user); return PAM_AUTH_ERR; }
@@ -241,8 +244,7 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 }
 
 /*
- * Refresh user cache entry, if it exists
- * Note: setcred runs before and after session_open
+ * setcred runs before and after session_open
  * which means, 'after' is in a chrooted-env, so setcred fails
  * (but before succeeds)
  * So a user is refreshed right before an attempts to open a session,
@@ -251,19 +253,38 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 PAM_EXTERN int
 pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
-  int rc;
-  const char *username;
-  int mflags = 0;
-
-  D1("Getting setcred PAM module options");
-  pam_options(&mflags, argc, argv);
-
-  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
-
-  if( !backend_opened() ) return PAM_CRED_UNAVAIL;
-
-  if( !backend_username_found(username) ){ D1("'%s' not found", username); return PAM_USER_UNKNOWN; }
-
-  D1("Set cred: %s allowed", username);
+  D1("Set cred allowed");
   return PAM_SUCCESS;
+}
+
+
+/* Fetch the password hash, from either the database or CentralEGA.
+ * Allocates a string into data. You have to clean it when you're done.
+ */
+static int
+_get_password_hash(const char* username, char** data)
+{
+  int rc = 0;
+
+  D1("Fetching the password hash of %s", username);
+
+  /* check database */
+  bool use_backend = backend_opened();
+  if(use_backend){
+    if(backend_get_password_hash(username, data)) return rc;
+  } else {
+    PROGRESS("Not using the cache");
+  }
+
+  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return 1; }
+
+  /* Defining the CentralEGA callback */
+  int _get_pwdh(uid_t uid, char* password_hash, char* pubkey, char* gecos){
+    int rc = 1;
+    if(password_hash){ *data = strdup(password_hash); rc = 0; /* success */ }
+    if(use_backend && backend_add_user(username, uid, password_hash, pubkey, gecos)); // ignore
+    return rc;
+  }
+
+  return cega_get_username(username, _get_pwdh);
 }

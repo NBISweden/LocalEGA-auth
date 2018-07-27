@@ -12,7 +12,7 @@ KEYS_EXEC = ega_ssh_keys
 CC=gcc
 LD=ld
 AS=gcc -c
-CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2
+CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2 -DPROGRESS
 LIBS=-lpam -lcurl -ljq -L/usr/local/lib -lsqlite3
 
 EGA_LIBDIR=/usr/local/lib/ega
@@ -26,7 +26,7 @@ NSS_OBJECTS = $(NSS_SOURCES:%.c=%.o)
 PAM_SOURCES = pam.c config.c backend.c cega.c homedir.c $(wildcard blowfish/*.c)
 PAM_OBJECTS = $(PAM_SOURCES:%.c=%.o) blowfish/x86.o
 
-KEYS_SOURCES = keys.c config.c backend.c
+KEYS_SOURCES = keys.c config.c backend.c cega.c
 KEYS_OBJECTS = $(KEYS_SOURCES:%.c=%.o)
 
 .PHONY: all debug clean install install-nss install-pam
