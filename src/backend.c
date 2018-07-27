@@ -45,7 +45,7 @@ destroy(void)
 inline bool
 backend_opened(void)
 {
-  return db && sqlite3_errcode(db) == SQLITE_OK;
+  return options->cache_enabled && db && sqlite3_errcode(db) == SQLITE_OK;
 }
 
 void
@@ -54,6 +54,7 @@ backend_open(void)
   D1("Opening backend");
   if( !loadconfig() ){ PROGRESS("Invalid configuration"); return; }
   if( backend_opened() ){ D1("Already opened"); return; }
+  if(!options->cache_enabled){ PROGRESS("Cache disabled"); return; }
 
   D1("Connection to: %s", options->db_connstr);
   sqlite3_open(options->db_connstr, &db);

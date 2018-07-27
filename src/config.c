@@ -26,7 +26,7 @@ valid_options(void)
   if(!options) { D3("No config struct"); return false; }
 
   D2("Checking the config struct");
-  if(options->cache_ttl <= CACHE_TTL_LOWEST) { D3("Cache_ttl too low"); valid = false; }
+  if(options->cache_enabled && options->cache_ttl < 0.0) { D3("Cache_ttl should be a positive number"); valid = false; }
   if(options->uid_shift < 0      ) { D3("Invalid ega_uid_shift");    valid = false; }
   if(options->gid < 0            ) { D3("Invalid ega_gid");          valid = false; }
 
@@ -65,6 +65,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   options->uid_shift = EGA_UID_SHIFT;
   options->with_cega = ENABLE_CEGA;
   options->gid = -1;
+  options->cache_enabled = true;
 
   COPYVAL(CFGFILE   , options->cfgfile          );
   COPYVAL(PROMPT    , options->prompt           );
@@ -134,8 +135,10 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     }	
   }
 
-
-
+  if(options->cache_ttl <= 0.0){
+    D1("Disabling the backend");
+    options->cache_enabled = false;
+  }
   return 0;
 }
 

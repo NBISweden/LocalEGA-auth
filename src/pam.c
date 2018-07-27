@@ -176,8 +176,6 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  if( !backend_opened() ) return PAM_SESSION_ERR;
-
   /* Construct mountpoint and rootdir_options */
   mountpoint = strjoina(options->ega_dir, "/", username);
   mount_options = strjoina(options->ega_fuse_flags, ",user=", username);
@@ -270,11 +268,7 @@ _get_password_hash(const char* username, char** data)
 
   /* check database */
   bool use_backend = backend_opened();
-  if(use_backend){
-    if(backend_get_password_hash(username, data)) return rc;
-  } else {
-    PROGRESS("Not using the cache");
-  }
+  if(use_backend && backend_get_password_hash(username, data)) return rc;
 
   if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return 1; }
 
@@ -282,7 +276,8 @@ _get_password_hash(const char* username, char** data)
   int _get_pwdh(uid_t uid, char* password_hash, char* pubkey, char* gecos){
     int rc = 1;
     if(password_hash){ *data = strdup(password_hash); rc = 0; /* success */ }
-    if(use_backend && backend_add_user(username, uid, password_hash, pubkey, gecos)); // ignore
+    else { PROGRESS("No password hash found for user '%s'", username); }
+    if(use_backend) backend_add_user(username, uid, password_hash, pubkey, gecos); // ignore result
     return rc;
   }
 

@@ -10,7 +10,6 @@
 #define CEGA_CERT "/etc/ega/cega.pem"
 #define PROMPT "Please, enter your EGA password: "
 
-#define CACHE_TTL_LOWEST 10.0 // in seconds.
 #define CACHE_TTL 3600.0 // 1h in seconds.
 #define EGA_UID_SHIFT 10000
 #define EGA_SHELL "/bin/bash"
@@ -26,6 +25,7 @@ struct options_s {
 
   char* db_connstr;        /* db connection string */
   double cache_ttl;        /* How long a cache entry is valid (in seconds) */
+  bool cache_enabled;      /* Off if cache_ttl <= 0.0 */
 
   char* ega_dir;           /* EGA main inbox directory */
   long int ega_dir_attrs;  /* in octal form */
