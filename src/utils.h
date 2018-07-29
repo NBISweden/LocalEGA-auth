@@ -10,12 +10,12 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef PROGRESS
-#undef PROGRESS
-#define PROGRESS(fmt, ...) fprintf(stderr, "[%d] "fmt"\n", getpid(), ##__VA_ARGS__)
+#ifdef REPORT
+#undef REPORT
+#define REPORT(fmt, ...) fprintf(stderr, "[%d] "fmt"\n", getpid(), ##__VA_ARGS__)
 #else
-#undef PROGRESS
-#define PROGRESS(...)
+#undef REPORT
+#define REPORT(...)
 #endif
 
 #define D1(...)

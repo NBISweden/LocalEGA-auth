@@ -52,9 +52,9 @@ void
 backend_open(void)
 {
   D1("Opening backend");
-  if( !loadconfig() ){ PROGRESS("Invalid configuration"); return; }
+  if( !loadconfig() ){ REPORT("Invalid configuration"); return; }
   if( backend_opened() ){ D1("Already opened"); return; }
-  if(!options->cache_enabled){ PROGRESS("Cache disabled"); return; }
+  if(!options->cache_enabled){ REPORT("Cache disabled"); return; }
 
   D1("Connection to: %s", options->db_connstr);
   sqlite3_open(options->db_connstr, &db);
@@ -224,6 +224,7 @@ backend_getpwnam_r(const char* username, struct passwd *result, char* buffer, si
   result->pw_name = (char*)username;
   /* if( (rc = _col2txt(stmt, 0, &(result->pw_name), &buffer, &buflen)) ) goto BAILOUT; */
   /* if( (rc = copy2buffer("x"     , &(result->pw_passwd), &buffer, &buflen)) ) goto BAILOUT; */
+  result->pw_passwd = options->x;
   if( (rc = _col2uid(stmt, 1, &(result->pw_uid))) ) goto BAILOUT;
   result->pw_gid = options->gid;
   if( (rc = _col2txt(stmt, 2, &(result->pw_gecos), &buffer, &buflen)) ) goto BAILOUT;

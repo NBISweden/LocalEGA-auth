@@ -12,27 +12,11 @@
 /*
  * passwd functions
  */
-enum nss_status
-_nss_ega_setpwent (int stayopen)
-{
-  D1("called");
-  return NSS_STATUS_UNAVAIL;
-}
-
-enum nss_status
-_nss_ega_endpwent(void)
-{
-  D1("called");
-  return NSS_STATUS_UNAVAIL;
-}
 
 /* Not allowed */
-enum nss_status
-_nss_ega_getpwent_r(struct passwd *result, char *buffer, size_t buflen, int *errnop)
-{
-  D1("called");
-  return NSS_STATUS_UNAVAIL;
-}
+enum nss_status _nss_ega_setpwent (int stayopen){ D1("called"); return NSS_STATUS_UNAVAIL; }
+enum nss_status _nss_ega_endpwent(void){ D1("called"); return NSS_STATUS_UNAVAIL; }
+enum nss_status _nss_ega_getpwent_r(struct passwd *result, char *buffer, size_t buflen, int *errnop){ D1("called"); return NSS_STATUS_UNAVAIL; }
 
 enum nss_status
 _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
@@ -48,18 +32,11 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
   D3("initial buffer size: %zd", buflen);
   /* memset(buffer, '\0', buflen); */
 
-  switch(backend_getpwuid_r(uid, result, buffer, buflen)){
-  case -1:
-    *errnop = ERANGE; return NSS_STATUS_TRYAGAIN;
-    break;
-  case 0: /* User found in cache */
-    D1("User found in cache");
-    *errnop = 0; return NSS_STATUS_SUCCESS;
-    break;
-  default: break;
-  }
+  int rc = backend_getpwuid_r(uid, result, buffer, buflen);
+  if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+  if( rc == 0 ){ D1("User found in cache"); *errnop = 0; return NSS_STATUS_SUCCESS; }
 
-  D1("No luck, user id %d not found", uid);
+  D1("User id %d not found", uid);
   return NSS_STATUS_NOTFOUND;
 }
 
@@ -68,8 +45,6 @@ enum nss_status
 _nss_ega_getpwnam_r(const char *username, struct passwd *result,
 		    char *buffer, size_t buflen, int *errnop)
 {
-  D3("initial buffer size: %zd", buflen);
-
   /* bail out if we're looking for the root user */
   /* if( !strcmp(username, "root") ){ D1("bail out when root"); return NSS_STATUS_NOTFOUND; } */
 
@@ -82,7 +57,7 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
     
     rc = backend_getpwnam_r(username, result, buffer, buflen);
     if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
-    if( rc == 0  ){ PROGRESS("User %s found in cache", username); *errnop = 0; return NSS_STATUS_SUCCESS; }
+    if( rc == 0  ){ REPORT("User %s found in cache", username); *errnop = 0; return NSS_STATUS_SUCCESS; }
     
   }
 
@@ -99,6 +74,7 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
     char* homedir = strjoina(options->ega_dir, "/", username);
     D3("Username %s [%s]", username, homedir);
     result->pw_name = (char*)username; /* no need to copy to buffer */
+    result->pw_passwd = options->x;
     result->pw_uid = uid;
     result->pw_gid = options->gid;
     if( copy2buffer(homedir, &(result->pw_dir)   , &buffer, &buflen) < 0 ) { return -1; }
@@ -113,7 +89,7 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
   rc = cega_get_username(username, cega_callback);
   if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
   if( rc > 0 ) { D1("User %s not found in CentralEGA", username); return NSS_STATUS_NOTFOUND; }
-  PROGRESS("User %s found in CentralEGA", username);
+  REPORT("User %s found in CentralEGA", username);
   *errnop = 0;
   return NSS_STATUS_SUCCESS;
 }

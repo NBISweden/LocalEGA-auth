@@ -276,7 +276,7 @@ _get_password_hash(const char* username, char** data)
   int _get_pwdh(uid_t uid, char* password_hash, char* pubkey, char* gecos){
     int rc = 1;
     if(password_hash){ *data = strdup(password_hash); rc = 0; /* success */ }
-    else { PROGRESS("No password hash found for user '%s'", username); }
+    else { REPORT("No password hash found for user '%s'", username); }
     if(use_backend) backend_add_user(username, uid, password_hash, pubkey, gecos); // ignore result
     return rc;
   }

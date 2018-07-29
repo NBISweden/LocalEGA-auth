@@ -119,7 +119,7 @@ cega_get_username(const char *username,
   cres->body = NULL;
   cres->size = 0;
 
-  curl_easy_setopt(curl, CURLOPT_NOPROGRESS    , 1L               ); /* shut off the progress meter */
+  /* curl_easy_setopt(curl, CURLOPT_NOPROGRESS    , 0L               ); */ /* enable progress meter */
   curl_easy_setopt(curl, CURLOPT_URL           , endpoint         );
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION , curl_callback    );
   curl_easy_setopt(curl, CURLOPT_WRITEDATA     , (void*)cres      );

@@ -72,11 +72,12 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   COPYVAL(CEGA_CERT , options->ssl_cert         );
   COPYVAL(EGA_SHELL , options->shell            );
   COPYVAL(""        , options->cega_json_prefix ); /* default */
+  COPYVAL("x"       , options->x ); /* internal use */
 
   /* default group id for lega */
   /* D1("Fetching default group id for 'lega'"); */
   /* struct group* grp = getgrnam("lega"); */
-  /* if( grp != NULL ) options->gid = grp->gr_gid; */
+  /* if( !grp ) options->gid = grp->gr_gid; */
 
   /* Parse line by line */
   while (getline(&line, &len, fp) > 0) {

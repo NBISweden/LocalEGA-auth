@@ -12,7 +12,7 @@ KEYS_EXEC = ega_ssh_keys
 CC=gcc
 LD=ld
 AS=gcc -c
-CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2 -DPROGRESS
+CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2 -DREPORT
 LIBS=-lpam -lcurl -ljq -L/usr/local/lib -lsqlite3
 
 EGA_LIBDIR=/usr/local/lib/ega
