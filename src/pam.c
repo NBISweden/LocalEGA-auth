@@ -166,10 +166,12 @@ PAM_EXTERN int
 pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
   const char *username;
-  char *mountpoint = NULL, *mount_options = NULL;
-  int rc, child;
-  struct sigaction newsa, oldsa;
+  char *mountpoint = NULL;
+  int rc;
   int mflags = 0;
+  /* char *mount_options = NULL; */
+  /* struct sigaction newsa, oldsa; */
+  /* int child; */
 
   D1("Getting open session PAM module options");
   pam_options(&mflags, argc, argv);
@@ -178,44 +180,44 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   /* Construct mountpoint and rootdir_options */
   mountpoint = strjoina(options->ega_dir, "/", username);
-  mount_options = strjoina(options->ega_fuse_flags, ",user=", username);
   D1("Mounting LegaFS for %s at %s", username, mountpoint);
+  /* mount_options = strjoina(options->ega_fuse_flags, ",user=", username); */
 
-  /*
-   * This code arranges that the demise of the child does not cause
-   * the application to receive a signal it is not expecting - which
-   * may kill the application or worse.
-   */
-  memset(&newsa, '\0', sizeof(newsa));
-  newsa.sa_handler = SIG_DFL;
-  sigaction(SIGCHLD, &newsa, &oldsa);
+  /* /\* */
+  /*  * This code arranges that the demise of the child does not cause */
+  /*  * the application to receive a signal it is not expecting - which */
+  /*  * may kill the application or worse. */
+  /*  *\/ */
+  /* memset(&newsa, '\0', sizeof(newsa)); */
+  /* newsa.sa_handler = SIG_DFL; */
+  /* sigaction(SIGCHLD, &newsa, &oldsa); */
 
-  /* fork */
-  child = fork();
-  if (child < 0) { D1("LegaFS fork failed: %s", strerror(errno)); return PAM_ABORT; }
+  /* /\* fork *\/ */
+  /* child = fork(); */
+  /* if (child < 0) { D1("LegaFS fork failed: %s", strerror(errno)); return PAM_ABORT; } */
 
-  if (child == 0) {
-     /* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) */
-     /*   _exit(PAM_SESSION_ERR); */
-    D1("Executing: %s %s -o %s", options->ega_fuse_exec, mountpoint, mount_options);
-    execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", mount_options, (char*)NULL);
-    /* should not get here: exit with error */
-    D1("LegaFS is not available");
-    _exit(errno);
-  }
+  /* if (child == 0) { */
+  /*    /\* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) *\/ */
+  /*    /\*   _exit(PAM_SESSION_ERR); *\/ */
+  /*   D1("Executing: %s %s -o %s", options->ega_fuse_exec, mountpoint, mount_options); */
+  /*   execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", mount_options, (char*)NULL); */
+  /*   /\* should not get here: exit with error *\/ */
+  /*   D1("LegaFS is not available"); */
+  /*   _exit(errno); */
+  /* } */
 
-  /* Child > 0 */
-  if(waitpid(child, &rc, 0) < 0) { D1("waitpid failed [%d]: %s", rc, strerror(errno)); return PAM_ABORT; }
-  if (!WIFEXITED(rc) || errno == EINTR) { D1("Error occured while mounting a LegaFS: %s", strerror(errno)); return PAM_SESSION_ERR; }
+  /* /\* Child > 0 *\/ */
+  /* if(waitpid(child, &rc, 0) < 0) { D1("waitpid failed [%d]: %s", rc, strerror(errno)); return PAM_ABORT; } */
+  /* if (!WIFEXITED(rc) || errno == EINTR) { D1("Error occured while mounting a LegaFS: %s", strerror(errno)); return PAM_SESSION_ERR; } */
 
-  sigaction(SIGCHLD, &oldsa, NULL);
+  /* sigaction(SIGCHLD, &oldsa, NULL); */
 
-  rc = WEXITSTATUS(rc);
-  if(rc) { D1("Unable to mount LegaFS [Exit %d]", rc); return PAM_SESSION_ERR; }
+  /* rc = WEXITSTATUS(rc); */
+  /* if(rc) { D1("Unable to mount LegaFS [Exit %d]", rc); return PAM_SESSION_ERR; } */
 
   D1("Chrooting to %s", mountpoint);
   if (chdir(mountpoint)) { D1("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
-  if (chroot(mountpoint)){ D1("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
+  /* if (chroot(mountpoint)){ D1("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; } */
 
   D1("Session open: Success");
   return PAM_SUCCESS;
@@ -270,16 +272,19 @@ _get_password_hash(const char* username, char** data)
   bool use_backend = backend_opened();
   if(use_backend && backend_get_password_hash(username, data)) return rc;
 
-  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return 1; }
-
   /* Defining the CentralEGA callback */
-  int _get_pwdh(uid_t uid, char* password_hash, char* pubkey, char* gecos){
+  int _get_pwdh(char* uname, uid_t uid, char* password_hash, char* pubkey, char* gecos){
     int rc = 1;
+    /* assert same name */
+    if( strcmp(username, uname) ){
+      REPORT("Requested username %s not matching username response %s", username, uname);
+      return rc;
+    }
     if(password_hash){ *data = strdup(password_hash); rc = 0; /* success */ }
     else { REPORT("No password hash found for user '%s'", username); }
     if(use_backend) backend_add_user(username, uid, password_hash, pubkey, gecos); // ignore result
     return rc;
   }
 
-  return cega_get_username(username, _get_pwdh);
+  return cega_resolve(strjoina(options->cega_endpoint_name, username), _get_pwdh);
 }

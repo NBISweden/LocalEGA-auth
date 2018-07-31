@@ -82,7 +82,6 @@ install: install-nss install-pam install-keys
 	@echo "Do not forget to run ldconfig and create/configure the file /etc/ega/auth.conf"
 	@echo "Look at the auth.conf.sample here, for example"
 
-
 clean:
 	-rm -f $(NSS_LIBRARY) $(NSS_OBJECTS)
 	-rm -f $(PAM_LIBRARY) $(PAM_OBJECTS)

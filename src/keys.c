@@ -20,16 +20,19 @@ main(int argc, const char **argv)
   bool use_backend = backend_opened();
   if(use_backend && backend_print_pubkey(username)) return rc;
 
-  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return 2; }
-
   /* Defining the CentralEGA callback */
-  int print_pubkey(uid_t uid, char* password_hash, char* pubkey, char* gecos){
+  int print_pubkey(char* uname, uid_t uid, char* password_hash, char* pubkey, char* gecos){
     int rc = 1;
+    /* assert same name */
+    if( strcmp(username, uname) ){
+      REPORT("Requested username %s not matching username response %s", username, uname);
+      return 1;
+    }
     if(pubkey){ printf("%s", pubkey); rc = 0; /* success */ }
     else { REPORT("No ssh key found for user '%s'", username); }
     if(use_backend) backend_add_user(username, uid, password_hash, pubkey, gecos); // ignore result
     return rc;
   }
 
-  return cega_get_username(username, print_pubkey);
+  return cega_resolve(strjoina(options->cega_endpoint_name, username), print_pubkey);
 }

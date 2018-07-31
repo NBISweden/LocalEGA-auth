@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <time.h>
 #include <sqlite3.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 #include "utils.h"
 #include "backend.h"
@@ -56,8 +58,14 @@ backend_open(void)
   if( backend_opened() ){ D1("Already opened"); return; }
   if(!options->cache_enabled){ REPORT("Cache disabled"); return; }
 
-  D1("Connection to: %s", options->db_connstr);
-  sqlite3_open(options->db_connstr, &db);
+  struct stat st;
+  if( stat(options->db_path, &st) ){ 
+    if (errno != ENOENT){ D3("stat(%s) failed", options->db_path); }
+    return;
+  }
+
+  D1("Connection to: %s", options->db_path);
+  sqlite3_open(options->db_path, &db); /* owned by root and rw-r--r-- */
   if (db == NULL){ D1("Failed to allocate database handle"); return; }
   D3("DB Connection: %p", db);
   

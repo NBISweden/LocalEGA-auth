@@ -1,7 +1,6 @@
 #include <nss.h>
 #include <pwd.h>
 #include <errno.h>
-#include <sys/stat.h>
 
 #include "utils.h"
 #include "backend.h"
@@ -25,19 +24,57 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
   /* bail out if we're looking for the root user */
   /* if( !strcmp(username, "root") ){ D1("bail out when root"); return NSS_STATUS_NOTFOUND; } */
 
-  D1("Looking up user id %d", uid);
+  D1("Looking up user id %u", uid);
 
-  if( !backend_opened() ) return NSS_STATUS_UNAVAIL;
+  if(uid <= options->uid_shift){ D1("... too low: ignoring"); return NSS_STATUS_NOTFOUND; }
 
-  D3("initial buffer size: %zd", buflen);
-  /* memset(buffer, '\0', buflen); */
+  bool use_backend = backend_opened();
+  int rc = 1;
+  if(use_backend){
+    
+    rc = backend_getpwuid_r(uid, result, buffer, buflen);
+    if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
+    if( rc == 0  ){ REPORT("User id %u found in cache", uid); *errnop = 0; return NSS_STATUS_SUCCESS; }
+    
+  }
 
-  int rc = backend_getpwuid_r(uid, result, buffer, buflen);
+  /* Defining the callback */
+  int cega_callback(char* uname, uid_t ega_uid, char* password_hash, char* pubkey, char* gecos){
+
+    /* assert same name */
+    if( ega_uid != uid ){
+      REPORT("Requested user id %u not matching user id response %u", uid, ega_uid);
+      return 1;
+    }
+
+    /* Add to database. Ignore result.
+     In case the buffer is too small later, it'll fetch the same data from the cache, next time. */
+    if(use_backend) backend_add_user(uname, uid, password_hash, pubkey, gecos);
+
+    /* Prepare the answer */
+    char* homedir = strjoina(options->ega_dir, "/", uname);
+    D1("User id %u [Username %s] [Homedir %s]", ega_uid, uname, homedir);
+    if( copy2buffer(uname, &(result->pw_name)   , &buffer, &buflen) < 0 ) { return -1; }
+    result->pw_passwd = options->x;
+    result->pw_uid = uid;
+    result->pw_gid = options->gid;
+    if( copy2buffer(homedir, &(result->pw_dir)   , &buffer, &buflen) < 0 ) { return -1; }
+    if( copy2buffer(gecos,   &(result->pw_gecos) , &buffer, &buflen) < 0 ) { return -1; }
+    if( copy2buffer(options->shell, &(result->pw_shell), &buffer, &buflen) < 0 ) { return -1; }
+
+    return 0;
+  }
+
+  _cleanup_str_ char* endpoint = (char*)malloc(sizeof(char) * (strlen(options->cega_endpoint_uid) + 32));
+  /* Laaaaaaaarge enough! */
+  if( sprintf(endpoint, "%s%u", options->cega_endpoint_uid, (uid - options->uid_shift)) < 0 ){
+    D1("Error formatting the endpoint"); return NSS_STATUS_NOTFOUND;
+  }
+  rc = cega_resolve(endpoint, cega_callback);
   if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
-  if( rc == 0 ){ D1("User found in cache"); *errnop = 0; return NSS_STATUS_SUCCESS; }
-
-  D1("User id %d not found", uid);
-  return NSS_STATUS_NOTFOUND;
+  if( rc > 0 ) { D1("User id %u not found in CentralEGA", uid); return NSS_STATUS_NOTFOUND; }
+  *errnop = 0;
+  return NSS_STATUS_SUCCESS;
 }
 
 /* Find user ny name */
@@ -61,10 +98,14 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
     
   }
 
-  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return NSS_STATUS_UNAVAIL; }
-
   /* Defining the callback */
-  int cega_callback(uid_t uid, char* password_hash, char* pubkey, char* gecos){
+  int cega_callback(char* uname, uid_t uid, char* password_hash, char* pubkey, char* gecos){
+
+    /* assert same name */
+    if( strcmp(username, uname) ){
+      REPORT("Requested username %s not matching username response %s", username, uname);
+      return 1;
+    }
 
     /* Add to database. Ignore result.
      In case the buffer is too small later, it'll fetch the same data from the cache, next time. */
@@ -72,7 +113,7 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
 
     /* Prepare the answer */
     char* homedir = strjoina(options->ega_dir, "/", username);
-    D3("Username %s [%s]", username, homedir);
+    D1("Username %s [Homedir %s]", uname, homedir);
     result->pw_name = (char*)username; /* no need to copy to buffer */
     result->pw_passwd = options->x;
     result->pw_uid = uid;
@@ -86,7 +127,7 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
     return 0;
   }
 
-  rc = cega_get_username(username, cega_callback);
+  rc = cega_resolve(strjoina(options->cega_endpoint_name, username), cega_callback);
   if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
   if( rc > 0 ) { D1("User %s not found in CentralEGA", username); return NSS_STATUS_NOTFOUND; }
   REPORT("User %s found in CentralEGA", username);

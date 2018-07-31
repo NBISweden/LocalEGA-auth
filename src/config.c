@@ -38,9 +38,10 @@ valid_options(void)
   if(!options->ega_fuse_flags    ) { D3("Invalid ega_fuse_flags");   valid = false; }
   if(!options->ega_fuse_exec     ) { D3("Invalid ega_fuse_exec");    valid = false; }
 
-  if(!options->db_connstr        ) { D3("Invalid db_connstr");       valid = false; }
+  if(!options->db_path        ) { D3("Invalid db_path");       valid = false; }
 
-  if(!options->cega_endpoint     ) { D3("Invalid cega_endpoint");    valid = false; }
+  if(!options->cega_endpoint_name) { D3("Invalid cega_endpoint for usernames");    valid = false; }
+  if(!options->cega_endpoint_uid ) { D3("Invalid cega_endpoint for user ids");    valid = false; }
   if(!options->cega_creds        ) { D3("Invalid cega_creds");       valid = false; }
 
   /* if(options->ssl_cert          ) { D3("Invalid ssl_cert");      valid = false; } */
@@ -63,7 +64,6 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   /* Default config values */
   options->cache_ttl = CACHE_TTL;
   options->uid_shift = EGA_UID_SHIFT;
-  options->with_cega = ENABLE_CEGA;
   options->gid = -1;
   options->cache_enabled = true;
 
@@ -116,24 +116,17 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     /* } */
     if(!strcmp(key, "ega_gid"           )) { if( !sscanf(val, "%u" , &(options->gid)   )) options->gid = -1; }
    
-    INJECT_OPTION(key, "db_connstr"       , val, options->db_connstr       );
-    INJECT_OPTION(key, "ega_dir"          , val, options->ega_dir          );
-    INJECT_OPTION(key, "ega_fuse_exec"    , val, options->ega_fuse_exec    );
-    INJECT_OPTION(key, "ega_fuse_flags"   , val, options->ega_fuse_flags   );
-    INJECT_OPTION(key, "prompt"           , val, options->prompt           );
-    INJECT_OPTION(key, "ega_shell"        , val, options->shell            );
-    INJECT_OPTION(key, "cega_endpoint"    , val, options->cega_endpoint    );
-    INJECT_OPTION(key, "cega_creds"       , val, options->cega_creds       );
-    INJECT_OPTION(key, "cega_json_prefix" , val, options->cega_json_prefix );
-    INJECT_OPTION(key, "ssl_cert"         , val, options->ssl_cert         );
-
-    if(!strcmp(key, "enable_cega")) {
-      if(!strcmp(val, "yes") || !strcmp(val, "true")){
-	options->with_cega = true;
-      } else {
-	D2("Could not parse the enable_cega: Using %s instead.", ((options->with_cega)?"yes":"no"));
-      }
-    }	
+    INJECT_OPTION(key, "db_path"           , val, options->db_path          );
+    INJECT_OPTION(key, "ega_dir"           , val, options->ega_dir          );
+    INJECT_OPTION(key, "ega_fuse_exec"     , val, options->ega_fuse_exec    );
+    INJECT_OPTION(key, "ega_fuse_flags"    , val, options->ega_fuse_flags   );
+    INJECT_OPTION(key, "prompt"            , val, options->prompt           );
+    INJECT_OPTION(key, "ega_shell"         , val, options->shell            );
+    INJECT_OPTION(key, "cega_endpoint_name", val, options->cega_endpoint_name);
+    INJECT_OPTION(key, "cega_endpoint_uid" , val, options->cega_endpoint_uid);
+    INJECT_OPTION(key, "cega_creds"        , val, options->cega_creds       );
+    INJECT_OPTION(key, "cega_json_prefix"  , val, options->cega_json_prefix );
+    INJECT_OPTION(key, "ssl_cert"          , val, options->ssl_cert         );
   }
 
   if(options->cache_ttl <= 0.0){
