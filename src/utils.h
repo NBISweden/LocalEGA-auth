@@ -9,6 +9,7 @@
 #define _XOPEN_SOURCE 700 /* for stpcpy */
 #include <string.h>
 #include <stdio.h>
+#include <syslog.h>
 
 #ifdef REPORT
 #undef REPORT
@@ -24,19 +25,24 @@
 
 #ifdef DEBUG
 
+extern char* syslog_name;
+
 #if DEBUG > 0
 #undef D1
-#define D1(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | "fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
+/* #define D1(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | "fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__) */
+#define D1(fmt, ...) syslog(LOG_MAKEPRI(LOG_USER, LOG_ERR), "debug1: "fmt"\n", ##__VA_ARGS__)
 #endif
 
 #if DEBUG > 1
 #undef D2
-#define D2(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | \t"fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
+/* #define D2(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | \t"fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__) */
+#define D2(fmt, ...) syslog(LOG_MAKEPRI(LOG_USER, LOG_ERR), "debug2: "fmt"\n", ##__VA_ARGS__)
 #endif
 
 #if DEBUG > 2
 #undef D3
-#define D3(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | \t\t"fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
+/* #define D3(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | \t\t"fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__) */
+#define D3(fmt, ...) syslog(LOG_MAKEPRI(LOG_USER, LOG_ERR), "debug3: "fmt"\n", ##__VA_ARGS__)
 #endif
 
 #endif /* !DEBUG */

@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <syslog.h>
 
 #include "utils.h"
 #include "backend.h"
@@ -21,6 +22,7 @@
 
 
 static sqlite3* db = NULL;
+char* syslog_name = "EGA";
 
 /*
  * Constructor/Destructor when the library is loaded
@@ -34,6 +36,9 @@ init(void)
 {
   D3("********** CONSTRUCTOR");
   backend_open();
+#ifdef DEBUG
+  openlog (syslog_name, (LOG_PERROR|LOG_CONS|LOG_NDELAY|LOG_PID), 0);
+#endif
 }
 
 __attribute__((destructor))
@@ -41,28 +46,24 @@ static void
 destroy(void)
 {
   D3("********** DESTRUCTOR");
+#ifdef DEBUG
+  closelog ();
+#endif
   backend_close(); 
 }
 
 inline bool
 backend_opened(void)
 {
-  return options->cache_enabled && db && sqlite3_errcode(db) == SQLITE_OK;
+  return db && sqlite3_errcode(db) == SQLITE_OK;
 }
 
 void
 backend_open(void)
 {
-  D1("Opening backend");
+  D2("Opening backend");
   if( !loadconfig() ){ REPORT("Invalid configuration"); return; }
   if( backend_opened() ){ D1("Already opened"); return; }
-  if(!options->cache_enabled){ REPORT("Cache disabled"); return; }
-
-  struct stat st;
-  if( stat(options->db_path, &st) ){ 
-    if (errno != ENOENT){ D3("stat(%s) failed", options->db_path); }
-    return;
-  }
 
   D1("Connection to: %s", options->db_path);
   sqlite3_open(options->db_path, &db); /* owned by root and rw-r--r-- */
@@ -171,15 +172,15 @@ backend_stmt_valid(sqlite3_stmt* stmt, int column)
   /* cache miss */
   if(sqlite3_step(stmt) != SQLITE_ROW) { D2("No SQL row"); return false; }
 
-  /* checking expiration */
-  if(sqlite3_column_type(stmt, column) != SQLITE_FLOAT){ D1("The expiration is not a float"); return false; }
-  double created_at = (time_t)sqlite3_column_double(stmt, column);
-  time_t now = time(NULL);
-  D1("Cache creation time: %f", created_at);
-  D1("Cache  current time: %lld", (long long int) now);
+  /* /\* checking expiration *\/ */
+  /* if(sqlite3_column_type(stmt, column) != SQLITE_FLOAT){ D1("The expiration is not a float"); return false; } */
+  /* double created_at = (time_t)sqlite3_column_double(stmt, column); */
+  /* time_t now = time(NULL); */
+  /* D1("Cache creation time: %f", created_at); */
+  /* D1("Cache  current time: %lld", (long long int) now); */
 
-  /* include case where expire failed and is the default value 0.0 */
-  if ( difftime(now, created_at) > options->cache_ttl ){ D2("Cache too old"); return false; }
+  /* /\* include case where expire failed and is the default value 0.0 *\/ */
+  /* if ( difftime(now, created_at) > options->cache_ttl ){ D2("Cache too old"); return false; } */
 
   /* valid entry */
   D2("Cache valid");
@@ -195,7 +196,7 @@ int backend_getpwuid_r(uid_t uid, struct passwd *result, char *buffer, size_t bu
   if(stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return rc; }
   sqlite3_bind_int(stmt, 1, uid);
 
-  /* Is it too old? */
+  /* Is it valid? */
   if(!backend_stmt_valid(stmt, 3)) goto BAILOUT;
 
   /* Convert to struct PWD */
@@ -225,7 +226,7 @@ backend_getpwnam_r(const char* username, struct passwd *result, char* buffer, si
   if(stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
   sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
 
-  /* Is it too old? */
+  /* Is it valid? */
   if(!backend_stmt_valid(stmt, 3)) goto BAILOUT;
 
   /* Convert to struct PWD */
@@ -257,17 +258,12 @@ backend_print_pubkey(const char* username)
   sqlite3_prepare_v2(db, "select pubkey,inserted from users where username = ?1 LIMIT 1", -1, &stmt, NULL);
   if(stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
   sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
-
   if(!backend_stmt_valid(stmt,1)) goto BAILOUT;
-
   if(sqlite3_column_type(stmt, 0) != SQLITE_TEXT){ D1("The colum 0 is not a string"); goto BAILOUT; }
-
   const unsigned char* pubkey = sqlite3_column_text(stmt, 0);
   if( !pubkey ){ D1("Memory allocation error"); goto BAILOUT; }
-  
   printf("%s", pubkey);
-  found = true;
-
+  found = true; /* success */
 BAILOUT:
   sqlite3_finalize(stmt);
   return found;

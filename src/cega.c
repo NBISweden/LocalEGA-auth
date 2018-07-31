@@ -137,8 +137,7 @@ cega_resolve(const char *endpoint,
   if (!jv_is_valid(parsed_response)) { D2("Invalid JSON response"); goto BAILOUT; }
 
   /* Preparing the queries */
-  jq = jq_init();
-  if (jq == NULL) { D2("jq memory allocation error"); goto BAILOUT; }
+  if ((jq = jq_init()) == NULL) { D2("jq memory allocation error"); goto BAILOUT; }
 
   char *username = NULL;
   char *pwd = NULL;

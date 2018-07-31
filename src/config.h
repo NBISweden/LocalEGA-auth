@@ -23,8 +23,6 @@ struct options_s {
   char* shell;             /* Please enter password */
 
   char* db_path;           /* db file path */
-  double cache_ttl;        /* How long a cache entry is valid (in seconds) */
-  bool cache_enabled;      /* Off if cache_ttl <= 0.0 */
 
   char* ega_dir;           /* EGA main inbox directory */
   long int ega_dir_attrs;  /* in octal form */

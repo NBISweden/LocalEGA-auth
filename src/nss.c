@@ -24,9 +24,11 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
   /* bail out if we're looking for the root user */
   /* if( !strcmp(username, "root") ){ D1("bail out when root"); return NSS_STATUS_NOTFOUND; } */
 
-  D1("Looking up user id %u", uid);
+  if( uid == (uid_t)(-1) ){ D2("ignoring -1"); return NSS_STATUS_NOTFOUND; }
 
-  if(uid <= options->uid_shift){ D1("... too low: ignoring"); return NSS_STATUS_NOTFOUND; }
+  uid_t ruid = uid - options->uid_shift; 
+  D1("Looking up user id %u [remotely %u]", uid, ruid);
+  if( ruid <= 0 ){ D2("... too low: ignoring"); return NSS_STATUS_NOTFOUND; }
 
   bool use_backend = backend_opened();
   int rc = 1;
@@ -67,7 +69,7 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
 
   _cleanup_str_ char* endpoint = (char*)malloc(sizeof(char) * (strlen(options->cega_endpoint_uid) + 32));
   /* Laaaaaaaarge enough! */
-  if( sprintf(endpoint, "%s%u", options->cega_endpoint_uid, (uid - options->uid_shift)) < 0 ){
+  if( sprintf(endpoint, "%s%u", options->cega_endpoint_uid, ruid) < 0 ){
     D1("Error formatting the endpoint"); return NSS_STATUS_NOTFOUND;
   }
   rc = cega_resolve(endpoint, cega_callback);

@@ -151,8 +151,6 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   } else {
     D2("Using libc: supporting MD5, SHA256, SHA512");
     if (!strcmp(pwdh, crypt(password, pwdh))){ return PAM_SUCCESS; }
-    D2("Original hash: %s", pwdh);
-    D2("Computed hash: %s", crypt(password, pwdh));
   }
 
   D1("Authentication failed for %s", user);
@@ -165,23 +163,23 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 PAM_EXTERN int
 pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
-  const char *username;
-  char *mountpoint = NULL;
-  int rc;
-  int mflags = 0;
-  /* char *mount_options = NULL; */
-  /* struct sigaction newsa, oldsa; */
-  /* int child; */
+  /* const char *username; */
+  /* char *mountpoint = NULL; */
+  /* int rc; */
+  /* int mflags = 0; */
+  /* /\* char *mount_options = NULL; *\/ */
+  /* /\* struct sigaction newsa, oldsa; *\/ */
+  /* /\* int child; *\/ */
 
-  D1("Getting open session PAM module options");
-  pam_options(&mflags, argc, argv);
+  /* D1("Getting open session PAM module options"); */
+  /* pam_options(&mflags, argc, argv); */
 
-  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+  /* if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; } */
 
-  /* Construct mountpoint and rootdir_options */
-  mountpoint = strjoina(options->ega_dir, "/", username);
-  D1("Mounting LegaFS for %s at %s", username, mountpoint);
-  /* mount_options = strjoina(options->ega_fuse_flags, ",user=", username); */
+  /* /\* Construct mountpoint and rootdir_options *\/ */
+  /* mountpoint = strjoina(options->ega_dir, "/", username); */
+  /* D1("Mounting LegaFS for %s at %s", username, mountpoint); */
+  /* /\* mount_options = strjoina(options->ega_fuse_flags, ",user=", username); *\/ */
 
   /* /\* */
   /*  * This code arranges that the demise of the child does not cause */
@@ -215,8 +213,8 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   /* rc = WEXITSTATUS(rc); */
   /* if(rc) { D1("Unable to mount LegaFS [Exit %d]", rc); return PAM_SESSION_ERR; } */
 
-  D1("Chrooting to %s", mountpoint);
-  if (chdir(mountpoint)) { D1("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
+  /* D1("Chrooting to %s", mountpoint); */
+  /* if (chdir(mountpoint)) { D1("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; } */
   /* if (chroot(mountpoint)){ D1("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; } */
 
   D1("Session open: Success");

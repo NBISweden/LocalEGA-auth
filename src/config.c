@@ -26,7 +26,6 @@ valid_options(void)
   if(!options) { D3("No config struct"); return false; }
 
   D2("Checking the config struct");
-  if(options->cache_enabled && options->cache_ttl < 0.0) { D3("Cache_ttl should be a positive number"); valid = false; }
   if(options->uid_shift < 0      ) { D3("Invalid ega_uid_shift");    valid = false; }
   if(options->gid < 0            ) { D3("Invalid ega_gid");          valid = false; }
 
@@ -62,10 +61,8 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   char *key,*eq,*val,*end;
 
   /* Default config values */
-  options->cache_ttl = CACHE_TTL;
   options->uid_shift = EGA_UID_SHIFT;
   options->gid = -1;
-  options->cache_enabled = true;
 
   COPYVAL(CFGFILE   , options->cfgfile          );
   COPYVAL(PROMPT    , options->prompt           );
@@ -106,7 +103,6 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     } else val = NULL; /* could not find the '=' sign */
 	
     if(!strcmp(key, "ega_dir_attrs" )) { options->ega_dir_attrs = strtol(val, NULL, 8); }
-    if(!strcmp(key, "cache_ttl"     )) { if( !sscanf(val, "%lf", &(options->cache_ttl) )) options->cache_ttl = -1; }
     if(!strcmp(key, "ega_uid_shift" )) { if( !sscanf(val, "%u" , &(options->uid_shift) )) options->uid_shift = -1; }
 
     /* if(!strcmp(key, "ega_group") && strcmp(val, "lega")) { */
@@ -129,17 +125,13 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     INJECT_OPTION(key, "ssl_cert"          , val, options->ssl_cert         );
   }
 
-  if(options->cache_ttl <= 0.0){
-    D1("Disabling the backend");
-    options->cache_enabled = false;
-  }
   return 0;
 }
 
 bool
 loadconfig(void)
 {
-  D2("Loading configuration %s", CFGFILE);
+  D1("Loading configuration %s", CFGFILE);
   if(options){ D2("Already loaded [@ %p]", options); return true; }
 
   _cleanup_file_ FILE* fp = NULL;

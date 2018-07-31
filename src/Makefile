@@ -12,7 +12,7 @@ KEYS_EXEC = ega_ssh_keys
 CC=gcc
 LD=ld
 AS=gcc -c
-CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2 -DREPORT
+CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2
 LIBS=-lpam -lcurl -ljq -L/usr/local/lib -lsqlite3
 
 EGA_LIBDIR=/usr/local/lib/ega
@@ -34,13 +34,13 @@ KEYS_OBJECTS = $(KEYS_SOURCES:%.c=%.o)
 
 all: install
 
-debug1: CFLAGS += -DDEBUG=1 -g
+debug1: CFLAGS += -DDEBUG=1 -g -DREPORT
 debug1: install
 
-debug2: CFLAGS += -DDEBUG=2 -g
+debug2: CFLAGS += -DDEBUG=2 -g -DREPORT
 debug2: install
 
-debug3: CFLAGS += -DDEBUG=3 -g
+debug3: CFLAGS += -DDEBUG=3 -g -DREPORT
 debug3: install
 
 $(NSS_LIBRARY): $(HEADERS) $(NSS_OBJECTS)
