@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/mount.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -18,6 +20,8 @@
 #include <security/pam_modules.h>
 #include <security/pam_ext.h>
 #include <security/pam_modutil.h>
+
+#include <limits.h>
 
 #include "blowfish/ow-crypt.h"
 #include "utils.h"
@@ -163,23 +167,23 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 PAM_EXTERN int
 pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
-  /* const char *username; */
-  /* char *mountpoint = NULL; */
-  /* int rc; */
-  /* int mflags = 0; */
-  /* /\* char *mount_options = NULL; *\/ */
-  /* /\* struct sigaction newsa, oldsa; *\/ */
-  /* /\* int child; *\/ */
+  const char *username;
+  char *mountpoint = NULL;
+  int rc;
+  int mflags = 0;
+  /* char *mount_options = NULL; */
+  /* struct sigaction newsa, oldsa; */
+  /* int child; */
 
-  /* D1("Getting open session PAM module options"); */
-  /* pam_options(&mflags, argc, argv); */
+  D1("Getting open session PAM module options");
+  pam_options(&mflags, argc, argv);
 
-  /* if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; } */
+  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  /* /\* Construct mountpoint and rootdir_options *\/ */
-  /* mountpoint = strjoina(options->ega_dir, "/", username); */
+  /* Construct mountpoint and rootdir_options */
+  mountpoint = strjoina(options->ega_dir, "/", username);
   /* D1("Mounting LegaFS for %s at %s", username, mountpoint); */
-  /* /\* mount_options = strjoina(options->ega_fuse_flags, ",user=", username); *\/ */
+  /* mount_options = strjoina(options->ega_fuse_flags, ",user=", username); */
 
   /* /\* */
   /*  * This code arranges that the demise of the child does not cause */
@@ -213,9 +217,21 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   /* rc = WEXITSTATUS(rc); */
   /* if(rc) { D1("Unable to mount LegaFS [Exit %d]", rc); return PAM_SESSION_ERR; } */
 
-  /* D1("Chrooting to %s", mountpoint); */
-  /* if (chdir(mountpoint)) { D1("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; } */
-  /* if (chroot(mountpoint)){ D1("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; } */
+
+  D1("Setting umask to %o", options->ega_dir_umask);
+  umask((mode_t)options->ega_dir_umask); /* ignore old mask */
+
+  if( options->chroot ){
+
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) { D1("Current working dir: %s\n", cwd); }
+    
+    D1("Chrooting to %s", mountpoint);
+    if (chdir(mountpoint)) { D1("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
+    if (chroot(mountpoint)){ D1("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
+    
+    if (getcwd(cwd, sizeof(cwd)) != NULL) { D1("Chroot working dir: %s\n", cwd); }
+  }
 
   D1("Session open: Success");
   return PAM_SUCCESS;

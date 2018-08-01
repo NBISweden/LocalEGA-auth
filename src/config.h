@@ -8,6 +8,8 @@
 #define CFGFILE "/etc/ega/auth.conf"
 #define CEGA_CERT "/etc/ega/cega.pem"
 #define PROMPT "Please, enter your EGA password: "
+#define ENABLE_CHROOT true
+#define UMASK 0027 /* no permission for world */
 
 #define CACHE_TTL 3600.0 // 1h in seconds.
 #define EGA_UID_SHIFT 10000
@@ -26,6 +28,8 @@ struct options_s {
 
   char* ega_dir;           /* EGA main inbox directory */
   long int ega_dir_attrs;  /* in octal form */
+  mode_t ega_dir_umask;    /* user process's mask */
+
   char* ega_fuse_exec;     /* LegaFS fuse executable */
   char* ega_fuse_flags;    /* Mount flags for fuse directory per user */
 
@@ -35,6 +39,8 @@ struct options_s {
   char* cega_json_prefix;  /* Searching with jq for the user data using this prefix */
   char* cega_creds;        /* for authentication: user:password */
   char* ssl_cert;          /* path the SSL certificate to contact Central EGA */
+
+  bool chroot;             /* sandboxing the users in their home directory */
 
   char* x; /* internal user */
 };

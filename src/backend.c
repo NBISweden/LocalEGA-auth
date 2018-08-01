@@ -34,10 +34,10 @@ __attribute__((constructor))
 static void
 init(void)
 {
-  D3("********** CONSTRUCTOR");
+  D3("Initializing the ega library");
   backend_open();
 #ifdef DEBUG
-  openlog (syslog_name, (LOG_PERROR|LOG_CONS|LOG_NDELAY|LOG_PID), 0);
+  openlog (syslog_name, (LOG_CONS|LOG_NDELAY|LOG_PID), 0);
 #endif
 }
 
@@ -45,7 +45,7 @@ __attribute__((destructor))
 static void
 destroy(void)
 {
-  D3("********** DESTRUCTOR");
+  D3("Cleaning up the ega library");
 #ifdef DEBUG
   closelog ();
 #endif

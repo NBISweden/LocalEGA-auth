@@ -63,6 +63,8 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   /* Default config values */
   options->uid_shift = EGA_UID_SHIFT;
   options->gid = -1;
+  options->chroot = ENABLE_CHROOT;
+  options->ega_dir_umask = (mode_t)UMASK;
 
   COPYVAL(CFGFILE   , options->cfgfile          );
   COPYVAL(PROMPT    , options->prompt           );
@@ -102,6 +104,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
 	  
     } else val = NULL; /* could not find the '=' sign */
 	
+    if(!strcmp(key, "ega_dir_umask" )) { options->ega_dir_umask = strtol(val, NULL, 8); }
     if(!strcmp(key, "ega_dir_attrs" )) { options->ega_dir_attrs = strtol(val, NULL, 8); }
     if(!strcmp(key, "ega_uid_shift" )) { if( !sscanf(val, "%u" , &(options->uid_shift) )) options->uid_shift = -1; }
 
@@ -123,6 +126,18 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     INJECT_OPTION(key, "cega_creds"        , val, options->cega_creds       );
     INJECT_OPTION(key, "cega_json_prefix"  , val, options->cega_json_prefix );
     INJECT_OPTION(key, "ssl_cert"          , val, options->ssl_cert         );
+
+
+    if(!strcmp(key, "chroot_isolation")) {
+      if(!strcmp(val, "yes") || !strcmp(val, "true") || !strcmp(val, "1") || !strcmp(val, "on")){
+	options->chroot = true;
+      } else if(!strcmp(val, "no") || !strcmp(val, "false") || !strcmp(val, "0") || !strcmp(val, "off")){
+	options->chroot = false;
+      } else {
+	D2("Could not parse the chroot_isolation: Using %s instead.", ((options->chroot)?"yes":"no"));
+      }
+    }	
+
   }
 
   return 0;
