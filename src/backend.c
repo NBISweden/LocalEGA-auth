@@ -15,9 +15,9 @@
                           pwdh     TEXT,				        \
 		          pubkey   TEXT,	                                \
 		          gecos    TEXT,					\
-                          inserted REAL DEFAULT (strftime('%%s','now'))	        \
+                          expires  REAL                                   	\
                         ) WITHOUT ROWID;"
-
+/* Not using "inserted REAL DEFAULT (strftime('%%s','now'))" */
 /* WITHOUT ROWID works only from 3.8.2 */
 
 
@@ -109,7 +109,7 @@ backend_add_user(const char* username,
   D1("Insert %s into cache", username);
 
   /* The entry will be updated if already present */
-  sqlite3_prepare_v2(db, "INSERT INTO users (username,uid,pwdh,pubkey,gecos) VALUES(?1,?2,?3,?4,?5)", -1, &stmt, NULL);
+  sqlite3_prepare_v2(db, "INSERT INTO users (username,uid,pwdh,pubkey,gecos,expires) VALUES(?1,?2,?3,?4,?5,?6)", -1, &stmt, NULL);
   if(!stmt){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
 
   sqlite3_bind_text(stmt,   1, username, -1, SQLITE_STATIC);
@@ -117,6 +117,12 @@ backend_add_user(const char* username,
   sqlite3_bind_text(stmt,   3, pwdh    , -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt,   4, pubkey  , -1, SQLITE_STATIC);
   sqlite3_bind_text(stmt,   5, gecos   , -1, SQLITE_STATIC);
+  
+  unsigned int now = (unsigned int)time(NULL);
+  unsigned int expiration = now + options->cache_ttl;
+  D2("           Current time to %u", now);
+  D2("Setting expiration date to %u", expiration);
+  sqlite3_bind_int(stmt, 6, expiration);
 
   /* We should acquire a RESERVED lock.
      See: https://www.sqlite.org/lockingv3.html#writing
@@ -161,43 +167,21 @@ _col2txt(sqlite3_stmt *stmt, int col, char** data, char **buffer, size_t* buflen
  *         0 on success
  *         1 on cache miss / user not found
  *         error otherwise
+ *
+ * Note: Those functions ignore the expiration column
  */
-
-/*
- * Check the cache entry not expired
- */
-static inline bool
-backend_stmt_valid(sqlite3_stmt* stmt, int column)
-{
-  /* cache miss */
-  if(sqlite3_step(stmt) != SQLITE_ROW) { D2("No SQL row"); return false; }
-
-  /* /\* checking expiration *\/ */
-  /* if(sqlite3_column_type(stmt, column) != SQLITE_FLOAT){ D1("The expiration is not a float"); return false; } */
-  /* double created_at = (time_t)sqlite3_column_double(stmt, column); */
-  /* time_t now = time(NULL); */
-  /* D1("Cache creation time: %f", created_at); */
-  /* D1("Cache  current time: %lld", (long long int) now); */
-
-  /* /\* include case where expire failed and is the default value 0.0 *\/ */
-  /* if ( difftime(now, created_at) > options->cache_ttl ){ D2("Cache too old"); return false; } */
-
-  /* valid entry */
-  D2("Cache valid");
-  return true;
-}
 
 int backend_getpwuid_r(uid_t uid, struct passwd *result, char *buffer, size_t buflen)
 {
   sqlite3_stmt *stmt = NULL;
   int rc = 1; /* cache miss */
-  D2("select username,uid,gecos,inserted from users where uid = %u LIMIT 1", uid);
-  sqlite3_prepare_v2(db, "select username,uid,gecos,inserted from users where uid = ?1 LIMIT 1", -1, &stmt, NULL);
+  D2("select username,uid,gecos from users where uid = %u LIMIT 1", uid);
+  sqlite3_prepare_v2(db, "select username,uid,gecos from users where uid = ?1 LIMIT 1", -1, &stmt, NULL);
   if(stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return rc; }
   sqlite3_bind_int(stmt, 1, uid);
 
-  /* Is it valid? */
-  if(!backend_stmt_valid(stmt, 3)) goto BAILOUT;
+  /* cache miss */
+  if(sqlite3_step(stmt) != SQLITE_ROW) { D2("No SQL row"); goto BAILOUT; }
 
   /* Convert to struct PWD */
   if( (rc = _col2txt(stmt, 0, &(result->pw_name), &buffer, &buflen)) ) goto BAILOUT;
@@ -221,13 +205,13 @@ backend_getpwnam_r(const char* username, struct passwd *result, char* buffer, si
 {
   sqlite3_stmt *stmt = NULL;
   int rc = 1; /* cache miss */
-  D2("select username,uid,gecos,inserted from users where username = '%s' LIMIT 1", username);
-  sqlite3_prepare_v2(db, "select username,uid,gecos,inserted from users where username = ?1 LIMIT 1", -1, &stmt, NULL);
+  D2("select username,uid,gecos from users where username = '%s' LIMIT 1", username);
+  sqlite3_prepare_v2(db, "select username,uid,gecos from users where username = ?1 LIMIT 1", -1, &stmt, NULL);
   if(stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
   sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
 
-  /* Is it valid? */
-  if(!backend_stmt_valid(stmt, 3)) goto BAILOUT;
+  /* cache miss */
+  if(sqlite3_step(stmt) != SQLITE_ROW) { D2("No SQL row"); goto BAILOUT; }
 
   /* Convert to struct PWD */
   result->pw_name = (char*)username;
@@ -248,17 +232,24 @@ BAILOUT:
   return rc;
 }
 
+
+/*
+ *
+ * The following functions do check the expiration date (in SQL)
+ *
+ */
+
 bool
 backend_print_pubkey(const char* username)
 {
   sqlite3_stmt *stmt = NULL;
   int found = false; /* cache miss */
 
-  D2("select pubkey,inserted from users where username = %s LIMIT 1", username);
-  sqlite3_prepare_v2(db, "select pubkey,inserted from users where username = ?1 LIMIT 1", -1, &stmt, NULL);
+  D2("select pubkey from users where username = %s AND expires > strftime('%%s', 'now') LIMIT 1", username);
+  sqlite3_prepare_v2(db, "select pubkey from users where username = ?1 AND expires > strftime('%s', 'now') LIMIT 1", -1, &stmt, NULL);
   if(stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
   sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
-  if(!backend_stmt_valid(stmt,1)) goto BAILOUT;
+  if(sqlite3_step(stmt) != SQLITE_ROW) { D2("No SQL row"); goto BAILOUT; } /* cache miss */
   if(sqlite3_column_type(stmt, 0) != SQLITE_TEXT){ D1("The colum 0 is not a string"); goto BAILOUT; }
   const unsigned char* pubkey = sqlite3_column_text(stmt, 0);
   if( !pubkey ){ D1("Memory allocation error"); goto BAILOUT; }
@@ -273,21 +264,54 @@ BAILOUT:
 /* Fetch the password hash from the database.
  * Allocates a string into data. You have to clean it when you're done.
  */
-int
+bool
 backend_get_password_hash(const char* username, char** data){
   sqlite3_stmt *stmt = NULL;
-  int rc = 1; /* cache miss */
-  D2("select pwdh,inserted from users where username = '%s' LIMIT 1", username);
-  sqlite3_prepare_v2(db, "select pwdh,inserted from users where username = ?1 LIMIT 1", -1, &stmt, NULL);
+  int success = false; /* cache miss */
+  D2("select pwdh from users where username = '%s' AND expires > strftime('%%s', 'now') LIMIT 1", username);
+  sqlite3_prepare_v2(db, "select pwdh from users where username = ?1 AND expires > strftime('%s', 'now') LIMIT 1", -1, &stmt, NULL);
   if(stmt == NULL){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
   sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
-  if(!backend_stmt_valid(stmt, 1)) goto BAILOUT;
-  if(sqlite3_column_type(stmt, 0) != SQLITE_TEXT){ D1("The colum 0 is not a string"); rc = 1; goto BAILOUT; }
+  if(sqlite3_step(stmt) != SQLITE_ROW) { D2("No SQL row"); goto BAILOUT; } /* cache miss */
+  if(sqlite3_column_type(stmt, 0) != SQLITE_TEXT){ D1("The colum 0 is not a string"); goto BAILOUT; }
   char* s = (char*)sqlite3_column_text(stmt, 0);
-  if( s == NULL ){ D1("Memory allocation error"); rc = 1; goto BAILOUT; }
+  if( s == NULL ){ D1("Memory allocation error"); goto BAILOUT; }
   *data = strdup(s);
-  /* success */ rc = 0;
+  success = true;
 BAILOUT:
   sqlite3_finalize(stmt);
-  return rc;
+  return success;
 }
+
+/*
+ * Check if the cache entry has expired
+ */
+bool
+backend_has_expired(const char* username)
+{
+  sqlite3_stmt *stmt = NULL;
+  bool has_expired = false;
+  D1("Check cache expiration for user %s", username);
+
+  /* The entry will be updated if already present */
+  sqlite3_prepare_v2(db, "SELECT count(*), expires, strftime('%s', 'now') FROM users WHERE username = ?1 AND expires > strftime('%s', 'now')", -1, &stmt, NULL);
+  if(!stmt){ D1("Prepared statement error: %s", sqlite3_errmsg(db)); return false; }
+  sqlite3_bind_text(stmt,   1, username, -1, SQLITE_STATIC);
+
+  /* Found it? */
+  if(sqlite3_step(stmt) != SQLITE_ROW) { D1("No SQL row, something is weird"); goto BAILOUT; }
+  if(sqlite3_column_type(stmt, 0) != SQLITE_INTEGER){ D1("The colum 0 is not an integer"); goto BAILOUT; }
+
+  D1("Just testing 1: %d", sqlite3_column_int(stmt, 0));
+  D1("Just testing 2: %d", sqlite3_column_int(stmt, 1));
+  D1("Just testing 3: %d", sqlite3_column_int(stmt, 2));
+
+  /* Either not found or has expired */
+  if (sqlite3_column_int(stmt, 0) == 0){ D2("Cache invalid for user %s", username); has_expired = true; }
+  
+BAILOUT:
+  sqlite3_finalize(stmt);
+  return has_expired;
+}
+
+

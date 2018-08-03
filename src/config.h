@@ -11,7 +11,7 @@
 #define ENABLE_CHROOT true
 #define UMASK 0027 /* no permission for world */
 
-#define CACHE_TTL 3600.0 // 1h in seconds.
+#define CACHE_TTL 3600 // 1h in seconds.
 #define EGA_UID_SHIFT 10000
 #define EGA_SHELL "/bin/bash"
 
@@ -23,6 +23,7 @@ struct options_s {
   uid_t uid_shift;         /* added to the user id from CentralEGA */
   char* prompt;            /* Please enter password */
   char* shell;             /* Please enter password */
+  unsigned int cache_ttl;  /* How long a cache entry is valid (in seconds) */
 
   char* db_path;           /* db file path */
 

@@ -26,6 +26,7 @@ valid_options(void)
   if(!options) { D3("No config struct"); return false; }
 
   D2("Checking the config struct");
+  if(options->cache_ttl < 0.0    ) { D3("Invalid cache_ttl");        valid = false; }
   if(options->uid_shift < 0      ) { D3("Invalid ega_uid_shift");    valid = false; }
   if(options->gid < 0            ) { D3("Invalid ega_gid");          valid = false; }
 
@@ -37,11 +38,11 @@ valid_options(void)
   if(!options->ega_fuse_flags    ) { D3("Invalid ega_fuse_flags");   valid = false; }
   if(!options->ega_fuse_exec     ) { D3("Invalid ega_fuse_exec");    valid = false; }
 
-  if(!options->db_path        ) { D3("Invalid db_path");       valid = false; }
+  if(!options->db_path           ) { D3("Invalid db_path");          valid = false; }
 
+  if(!options->cega_creds        ) { D3("Invalid cega_creds");       valid = false; }
   if(!options->cega_endpoint_name) { D3("Invalid cega_endpoint for usernames");    valid = false; }
   if(!options->cega_endpoint_uid ) { D3("Invalid cega_endpoint for user ids");    valid = false; }
-  if(!options->cega_creds        ) { D3("Invalid cega_creds");       valid = false; }
 
   /* if(options->ssl_cert          ) { D3("Invalid ssl_cert");      valid = false; } */
 
@@ -65,6 +66,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   options->gid = -1;
   options->chroot = ENABLE_CHROOT;
   options->ega_dir_umask = (mode_t)UMASK;
+  options->cache_ttl = CACHE_TTL;
 
   COPYVAL(CFGFILE   , options->cfgfile          );
   COPYVAL(PROMPT    , options->prompt           );
@@ -72,11 +74,6 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   COPYVAL(EGA_SHELL , options->shell            );
   COPYVAL(""        , options->cega_json_prefix ); /* default */
   COPYVAL("x"       , options->x ); /* internal use */
-
-  /* default group id for lega */
-  /* D1("Fetching default group id for 'lega'"); */
-  /* struct group* grp = getgrnam("lega"); */
-  /* if( !grp ) options->gid = grp->gr_gid; */
 
   /* Parse line by line */
   while (getline(&line, &len, fp) > 0) {
@@ -107,13 +104,8 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     if(!strcmp(key, "ega_dir_umask" )) { options->ega_dir_umask = strtol(val, NULL, 8); }
     if(!strcmp(key, "ega_dir_attrs" )) { options->ega_dir_attrs = strtol(val, NULL, 8); }
     if(!strcmp(key, "ega_uid_shift" )) { if( !sscanf(val, "%u" , &(options->uid_shift) )) options->uid_shift = -1; }
-
-    /* if(!strcmp(key, "ega_group") && strcmp(val, "lega")) { */
-    /*   D1("Fetching group id for '%s'", val); */
-    /*   grp = getgrnam(val); */
-    /*   if( grp != NULL ) options->gid = grp->gr_gid; */
-    /* } */
-    if(!strcmp(key, "ega_gid"           )) { if( !sscanf(val, "%u" , &(options->gid)   )) options->gid = -1; }
+    if(!strcmp(key, "cache_ttl"     )) { if( !sscanf(val, "%u" , &(options->cache_ttl) )) options->cache_ttl = -1; }
+    if(!strcmp(key, "ega_gid"       )) { if( !sscanf(val, "%u" , &(options->gid)   )) options->gid = -1; }
    
     INJECT_OPTION(key, "db_path"           , val, options->db_path          );
     INJECT_OPTION(key, "ega_dir"           , val, options->ega_dir          );

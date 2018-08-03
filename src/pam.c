@@ -79,7 +79,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   struct pam_response *resp;
   int mflags = 0;
   
-  D1("Getting auth PAM module options");
+  D2("Getting auth PAM module options");
 
   rc = pam_get_user(pamh, &user, NULL);
   if (rc != PAM_SUCCESS) { D1("Can't get user: %s", pam_strerror(pamh, rc)); return rc; }
@@ -175,7 +175,7 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
   /* struct sigaction newsa, oldsa; */
   /* int child; */
 
-  D1("Getting open session PAM module options");
+  D2("Getting open session PAM module options");
   pam_options(&mflags, argc, argv);
 
   if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
@@ -223,14 +223,18 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   if( options->chroot ){
 
+#ifdef DEBUG
     char cwd[PATH_MAX];
     if (getcwd(cwd, sizeof(cwd)) != NULL) { D1("Current working dir: %s\n", cwd); }
-    
+#endif
+   
     D1("Chrooting to %s", mountpoint);
     if (chdir(mountpoint)) { D1("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
     if (chroot(mountpoint)){ D1("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
     
+#ifdef DEBUG
     if (getcwd(cwd, sizeof(cwd)) != NULL) { D1("Chroot working dir: %s\n", cwd); }
+#endif
   }
 
   D1("Session open: Success");
@@ -253,8 +257,40 @@ pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char *argv[]
 PAM_EXTERN int
 pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
-  D1("Account: allowed");
-  return PAM_SUCCESS;
+  D1("Account: Checking cache expiration");
+  int rc;
+  const char *username;
+  int mflags = 0;
+
+  D2("Getting acct PAM module options");
+  pam_options(&mflags, argc, argv);
+
+  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+
+  /* check database */
+  bool use_backend = backend_opened();
+  if(!use_backend){ D1("Backend disabled: Account allowed by default"); return PAM_SUCCESS; }
+
+  if(!backend_has_expired(username)){ D1("Account valid for user '%s' [cached]", username); return PAM_SUCCESS; }
+
+  /* Defining the CentralEGA callback */
+  int cega_callback(char* uname, uid_t uid, char* password_hash, char* pubkey, char* gecos){
+    /* assert same name */
+    if( strcmp(username, uname) ){
+      REPORT("Requested username %s not matching username response %s", username, uname);
+      return PAM_CRED_UNAVAIL;
+    }
+    /* Add to database. Ignore result. */
+    if(use_backend) backend_add_user(username, uid, password_hash, pubkey, gecos);
+    return PAM_SUCCESS;
+  }
+
+  rc = cega_resolve(strjoina(options->cega_endpoint_name, username), cega_callback);
+
+  if(rc == PAM_SUCCESS){ D1("Account valid for user '%s'", username); return PAM_SUCCESS; }
+
+  REPORT("Account expired '%s'", username);
+  return PAM_CRED_EXPIRED;
 }
 
 /*

@@ -14,7 +14,7 @@ main(int argc, const char **argv)
 
   if( argc < 2 ){ fprintf(stderr, "Usage: %s user\n", argv[0]); return 1; }
 
-  D1("Fetching the public key of %s", username);
+  REPORT("Fetching the public key of %s", username);
 
   /* check database */
   bool use_backend = backend_opened();
