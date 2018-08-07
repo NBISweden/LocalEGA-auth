@@ -40,6 +40,9 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
     
   }
 
+  if( getuid() != 0 ){ return NSS_STATUS_NOTFOUND; }
+  D2("Ok, you are root, go go gadget \"fetch users from CentralEGA\"");
+
   /* Defining the callback */
   int cega_callback(char* uname, uid_t ega_uid, char* password_hash, char* pubkey, char* gecos){
 
@@ -99,6 +102,9 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
     if( rc == 0  ){ REPORT("User %s found in cache", username); *errnop = 0; return NSS_STATUS_SUCCESS; }
     
   }
+
+  if( getuid() != 0 ){ return NSS_STATUS_NOTFOUND; }
+  D2("Ok, you are root, go go gadget \"fetch users from CentralEGA\"");
 
   /* Defining the callback */
   int cega_callback(char* uname, uid_t uid, char* password_hash, char* pubkey, char* gecos){

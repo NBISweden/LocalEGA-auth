@@ -55,7 +55,7 @@ destroy(void)
 inline bool
 backend_opened(void)
 {
-  return db && sqlite3_errcode(db) == SQLITE_OK;
+  return db != NULL && sqlite3_errcode(db) == SQLITE_OK;
 }
 
 void

@@ -9,11 +9,16 @@ NSS_LIBRARY=libnss_ega.so.2.0
 PAM_LIBRARY = pam_ega.so
 KEYS_EXEC = ega_ssh_keys
 
+
 CC=gcc
 LD=ld
 AS=gcc -c
 CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2
 LIBS=-lpam -lcurl -ljq -L/usr/local/lib -lsqlite3
+
+ifdef SYSLOG
+CFLAGS += -DHAS_SYSLOG
+endif
 
 EGA_LIBDIR=/usr/local/lib/ega
 EGA_BINDIR=/usr/local/bin

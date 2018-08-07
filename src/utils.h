@@ -27,22 +27,31 @@
 
 extern char* syslog_name;
 
+#ifdef HAS_SYSLOG
+#define DEBUG_FUNC(level, fmt, ...) syslog(LOG_MAKEPRI(LOG_USER, LOG_ERR), level" "fmt"\n", ##__VA_ARGS__)
+#define LEVEL1 "debug1:"
+#define LEVEL2 "debug2:"
+#define LEVEL3 "debug3:"
+#else
+#define DEBUG_FUNC(level, fmt, ...) fprintf(stderr, "[%5d / %5d] %-10s(%3d)%22s |" level " " fmt "\n", getppid(), getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
+#define LEVEL1 ""
+#define LEVEL2 "\t"
+#define LEVEL3 "\t\t"
+#endif
+
 #if DEBUG > 0
 #undef D1
-#define D1(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | "fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
-/* #define D1(fmt, ...) syslog(LOG_MAKEPRI(LOG_USER, LOG_ERR), "debug1: "fmt"\n", ##__VA_ARGS__) */
+#define D1(fmt, ...) DEBUG_FUNC(LEVEL1, fmt, ##__VA_ARGS__)
 #endif
 
 #if DEBUG > 1
 #undef D2
-#define D2(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | \t"fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
-/* #define D2(fmt, ...) syslog(LOG_MAKEPRI(LOG_USER, LOG_ERR), "debug2: "fmt"\n", ##__VA_ARGS__) */
+#define D2(fmt, ...) DEBUG_FUNC(LEVEL2, fmt, ##__VA_ARGS__)
 #endif
 
 #if DEBUG > 2
 #undef D3
-#define D3(fmt, ...) fprintf(stderr, "[%5d] %-10s(%3d)%22s | \t\t"fmt"\n", getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
-/* #define D3(fmt, ...) syslog(LOG_MAKEPRI(LOG_USER, LOG_ERR), "debug3: "fmt"\n", ##__VA_ARGS__) */
+#define D3(fmt, ...) DEBUG_FUNC(LEVEL3, fmt, ##__VA_ARGS__)
 #endif
 
 #endif /* !DEBUG */

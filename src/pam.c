@@ -168,73 +168,28 @@ PAM_EXTERN int
 pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
   const char *username;
-  char *mountpoint = NULL;
   int rc;
   int mflags = 0;
-  /* char *mount_options = NULL; */
-  /* struct sigaction newsa, oldsa; */
-  /* int child; */
 
   D2("Getting open session PAM module options");
   pam_options(&mflags, argc, argv);
 
   if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  /* Construct mountpoint and rootdir_options */
-  mountpoint = strjoina(options->ega_dir, "/", username);
-  /* D1("Mounting LegaFS for %s at %s", username, mountpoint); */
-  /* mount_options = strjoina(options->ega_fuse_flags, ",user=", username); */
+  /* Construct homedir */
+  char *homedir = strjoina(options->ega_dir, "/", username);
 
-  /* /\* */
-  /*  * This code arranges that the demise of the child does not cause */
-  /*  * the application to receive a signal it is not expecting - which */
-  /*  * may kill the application or worse. */
-  /*  *\/ */
-  /* memset(&newsa, '\0', sizeof(newsa)); */
-  /* newsa.sa_handler = SIG_DFL; */
-  /* sigaction(SIGCHLD, &newsa, &oldsa); */
-
-  /* /\* fork *\/ */
-  /* child = fork(); */
-  /* if (child < 0) { D1("LegaFS fork failed: %s", strerror(errno)); return PAM_ABORT; } */
-
-  /* if (child == 0) { */
-  /*    /\* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) *\/ */
-  /*    /\*   _exit(PAM_SESSION_ERR); *\/ */
-  /*   D1("Executing: %s %s -o %s", options->ega_fuse_exec, mountpoint, mount_options); */
-  /*   execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", mount_options, (char*)NULL); */
-  /*   /\* should not get here: exit with error *\/ */
-  /*   D1("LegaFS is not available"); */
-  /*   _exit(errno); */
-  /* } */
-
-  /* /\* Child > 0 *\/ */
-  /* if(waitpid(child, &rc, 0) < 0) { D1("waitpid failed [%d]: %s", rc, strerror(errno)); return PAM_ABORT; } */
-  /* if (!WIFEXITED(rc) || errno == EINTR) { D1("Error occured while mounting a LegaFS: %s", strerror(errno)); return PAM_SESSION_ERR; } */
-
-  /* sigaction(SIGCHLD, &oldsa, NULL); */
-
-  /* rc = WEXITSTATUS(rc); */
-  /* if(rc) { D1("Unable to mount LegaFS [Exit %d]", rc); return PAM_SESSION_ERR; } */
-
-
+  /* Handling umask */
   D1("Setting umask to %o", options->ega_dir_umask);
   umask((mode_t)options->ega_dir_umask); /* ignore old mask */
-
+  
   if( options->chroot ){
-
-#ifdef DEBUG
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) != NULL) { D1("Current working dir: %s\n", cwd); }
-#endif
-   
-    D1("Chrooting to %s", mountpoint);
-    if (chdir(mountpoint)) { D1("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
-    if (chroot(mountpoint)){ D1("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
-    
-#ifdef DEBUG
-    if (getcwd(cwd, sizeof(cwd)) != NULL) { D1("Chroot working dir: %s\n", cwd); }
-#endif
+    D1("Chrooting to %s", homedir);
+    if (chdir(homedir)) { D1("Unable to chdir to %s: %s", homedir, strerror(errno)); return PAM_SESSION_ERR; }
+    if (chroot(homedir)){ D1("Unable to chroot(%s): %s", homedir, strerror(errno)); return PAM_SESSION_ERR; }
+    if (chdir("/")){ D1("Unable to chdir(/) after chroot(%s): %s", homedir, strerror(errno)); return PAM_SESSION_ERR; }
+  } else {
+    D1("Chrooting disabled");
   }
 
   D1("Session open: Success");
@@ -303,6 +258,8 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 PAM_EXTERN int
 pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
+  /* D1("Set cred ignored"); */
+  /* return PAM_IGNORE; */
   D1("Set cred allowed");
   return PAM_SUCCESS;
 }

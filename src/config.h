@@ -8,7 +8,7 @@
 #define CFGFILE "/etc/ega/auth.conf"
 #define CEGA_CERT "/etc/ega/cega.pem"
 #define PROMPT "Please, enter your EGA password: "
-#define ENABLE_CHROOT true
+#define ENABLE_CHROOT false
 #define UMASK 0027 /* no permission for world */
 
 #define CACHE_TTL 3600 // 1h in seconds.
