@@ -156,11 +156,12 @@ cega_resolve(const char *endpoint,
   if( (!pwd && !pbk) || !gecos || uid <= 0 ){ rc = 1; }
   else { rc = cb(username, (uid_t)(uid + options->uid_shift), pwd, pbk, gecos); }
 
+  /* Cleanup for JV */
   jv_free(parsed_response);
 
 BAILOUT:
   if(cres)free(cres);
-  if(jq)jq_teardown(&jq); /* should free pwd and pbk */
+  if(jq)jq_teardown(&jq);
   curl_easy_cleanup(curl);
   curl_global_cleanup();
   return rc;

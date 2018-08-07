@@ -9,11 +9,10 @@ int
 main(int argc, const char **argv)
 {
   int rc = 0;
-  _cleanup_str_ char* pubkey = NULL;
-  const char* username = argv[1];
 
   if( argc < 2 ){ fprintf(stderr, "Usage: %s user\n", argv[0]); return 1; }
 
+  const char* username = argv[1];
   REPORT("Fetching the public key of %s", username);
 
   /* check database */

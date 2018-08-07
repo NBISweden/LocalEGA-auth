@@ -65,7 +65,7 @@ extern char* syslog_name;
 static inline void close_file(FILE** f){ if(*f){ D3("Closing file"); fclose(*f); }; }
 #define _cleanup_file_ __attribute__((cleanup(close_file)))
 
-static inline void free_str(char** p){ D3("Freeing %p", *p); free(*p); }
+static inline void free_str(char** p){ D3("Freeing %p: %s", p, *p); free(*p); }
 #define _cleanup_str_ __attribute__((cleanup(free_str)))
 
 /*
