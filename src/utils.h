@@ -35,8 +35,8 @@ extern char* syslog_name;
 #else
 #define DEBUG_FUNC(level, fmt, ...) fprintf(stderr, "[%5d / %5d] %-10s(%3d)%22s |" level " " fmt "\n", getppid(), getpid(), __FILE__, __LINE__, __FUNCTION__, ##__VA_ARGS__)
 #define LEVEL1 ""
-#define LEVEL2 "\t"
-#define LEVEL3 "\t\t"
+#define LEVEL2 "    "
+#define LEVEL3 "        "
 #endif
 
 #if DEBUG > 0

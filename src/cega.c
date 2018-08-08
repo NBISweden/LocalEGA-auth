@@ -1,22 +1,53 @@
 #include <curl/curl.h>
-#include <jq.h>
 #include <pwd.h>
+
+#include "jsmn/jsmn.h"
 
 #include "utils.h"
 #include "backend.h"
 #include "cega.h"
 
 /* Will be appended to options->cega_json_prefix */
-#define CEGA_JSON_USER  ".username"
-#define CEGA_JSON_UID   ".uid"
-#define CEGA_JSON_PWD   ".password_hash"
-#define CEGA_JSON_PBK   ".pubkey"
-#define CEGA_JSON_GECOS ".gecos"
+#define CEGA_JSON_USER  "username"
+#define CEGA_JSON_USER_len  8
+#define CEGA_JSON_UID   "uid"
+#define CEGA_JSON_UID_len 3
+#define CEGA_JSON_PWD   "password_hash"
+#define CEGA_JSON_PWD_len 13
+#define CEGA_JSON_PBK   "pubkey"
+#define CEGA_JSON_PBK_len 6
+#define CEGA_JSON_GECOS "gecos"
+#define CEGA_JSON_GECOS_len 5
+
+#define CEGA_JSON_PREFIX_DELIM "."
 
 struct curl_res_s {
   char *body;
   size_t size;
 };
+
+#define KEYEQ(json, t, s) ((int)strlen(s) == (t)->end - (t)->start && strncmp((json) + (t)->start, s, (t)->end - (t)->start) == 0)
+#define TYPE2STR(t) (((t) == JSMN_OBJECT)   ? "Object":    \
+                     ((t) == JSMN_ARRAY)    ? "Array":     \
+                     ((t) == JSMN_STRING)   ? "String":    \
+                     ((t) == JSMN_PRIMITIVE)? "Primitive": \
+                                              "Undefined")
+
+static int
+get_size(jsmntok_t *t){
+  int i, j;
+  if (t->type == JSMN_PRIMITIVE || t->type == JSMN_STRING) {
+    if(t->size > 0) return get_size(t+1)+1;
+    return 1;
+  } else if (t->type == JSMN_OBJECT || t->type == JSMN_ARRAY) {
+    j = 0;
+    for (i = 0; i < t->size; i++) { j += get_size(t+1+i); }
+    return j+1;
+  } else {
+    D1("get_size: weird type %s", TYPE2STR(t->type));
+    return 0;
+  }
+}
 
 /* callback for curl fetch */
 size_t
@@ -38,63 +69,21 @@ curl_callback (void* contents, size_t size, size_t nmemb, void* userdata) {
   return realsize;
 }
 
-static int
-json2str(jq_state *jq, const char* query_end, jv json, char** res){
-
-  char* query = strjoina(options->cega_json_prefix, query_end);
-  D3("Processing query: %s", query);
-
-  if (!jq_compile(jq, query)){ D3("Invalid query"); return 1; }
-
-  jq_start(jq, json, 0); // no flags
-  jv result = jq_next(jq);
-  if(jv_is_valid(result)){ // no consume
-
-    if(jv_get_kind(result) == JV_KIND_STRING) { // no consume
-      D3("Processing a string");
-      *res = (char*)jv_string_value(result); // consumed
-      D3("Valid result: %s", *res);
-    } else {
-      D3("Valid result but not a string");
-      //jv_dump(result, 0);
-      jv_free(result);
-    }
-  }
-  return 0;
-}
-
-static int
-json2int(jq_state *jq, const char* query_end, jv json, int* res){
-
-  char* query = strjoina(options->cega_json_prefix, query_end);
-  D3("Processing query: %s", query);
-
-  if (!jq_compile(jq, query)){ D3("Invalid query"); return 1; }
-
-  jq_start(jq, json, 0); // no flags
-  jv result = jq_next(jq);
-  if(jv_is_valid(result)){ // no consume
-    if(jv_get_kind(result) == JV_KIND_NUMBER) { // no consume
-      D3("Processing a number");
-      *res = (int)jv_number_value(result); // consumed; make it (unsigned int)
-      D3("Valid result: %d", *res);
-    } else {
-      D3("Valid result but not a string, nor a number");
-      //jv_dump(result, 0);
-      jv_free(result);
-    }
-  }
-  return 0;
-}
-
 int
 cega_resolve(const char *endpoint,
 	     int (*cb)(char*, uid_t, char*, char*, char*))
 {
   int rc = 1; /* error */
   struct curl_res_s* cres = NULL;
-  jq_state* jq = NULL;
   CURL* curl = NULL;
+  jsmn_parser jsonparser; /* on the stack */
+  jsmntok_t *tokens = NULL; /* array of tokens */
+  _cleanup_str_ char* prefix = NULL;
+  char *username = NULL;
+  char *pwd = NULL;
+  char *pbk = NULL;
+  char *gecos = NULL;
+  int uid = -1;
 
   D1("Contacting %s", endpoint);
 
@@ -132,36 +121,123 @@ cega_resolve(const char *endpoint,
 
   /* Successful cURL */
   D2("Parsing the JSON response");
-  jv parsed_response = jv_parse(cres->body);
 
-  if (!jv_is_valid(parsed_response)) { D2("Invalid JSON response"); goto BAILOUT; }
+  D1("JSON string [size %zu]: %s", cres->size, cres->body);
 
-  /* Preparing the queries */
-  if ((jq = jq_init()) == NULL) { D2("jq memory allocation error"); goto BAILOUT; }
+  size_t size_guess = 11; /* 5*2 (key:value) + 1(object) */
+  int r;
 
-  char *username = NULL;
-  char *pwd = NULL;
-  char *pbk = NULL;
-  char *gecos = NULL;
-  int uid = -1;
+REALLOC:
+  /* Initialize parser (for every guess) */
+  jsmn_init(&jsonparser);
+  D2("Guessing with %zu tokens", size_guess);
+  if(tokens)free(tokens);
+  tokens = malloc(sizeof(jsmntok_t) * size_guess);
+  if (tokens == NULL) { D1("memory allocation error"); goto BAILOUT; }
+  r = jsmn_parse(&jsonparser, cres->body, cres->size, tokens, size_guess);
+  if (r < 0) { /* error */
+    D2("JSON parsing error: %s", (r == JSMN_ERROR_INVAL)? "JSON string is corrupted" :
+                                 (r == JSMN_ERROR_PART) ? "Incomplete JSON string":
+                                 (r == JSMN_ERROR_NOMEM)? "Not enough space in token array":
+                                                          "Unknown error");
+    if (r == JSMN_ERROR_NOMEM) {
+      size_guess = size_guess * 2; /* double it */
+      goto REALLOC;
+    }
+    goto BAILOUT;
+  }
 
-  rc = 
-    json2str(jq, CEGA_JSON_USER , jv_copy(parsed_response), &username ) +
-    json2str(jq, CEGA_JSON_PWD  , jv_copy(parsed_response), &pwd      ) +
-    json2str(jq, CEGA_JSON_PBK  , jv_copy(parsed_response), &pbk      ) +
-    json2int(jq, CEGA_JSON_UID  , jv_copy(parsed_response), &uid      ) +
-    json2str(jq, CEGA_JSON_GECOS, jv_copy(parsed_response), &gecos    ) ;
+  /* Valid response */
+  D3("%d tokens found", r);
+
+  if( tokens->type != JSMN_OBJECT ){ D1("JSON object expected"); goto BAILOUT; }
+
+  /* Find root token given the CentralEGA prefix */
+  jsmntok_t *t = tokens;
+  prefix = strdup(options->cega_json_prefix); /* strtok modifies the str, so making copy */
+  const char *part = strtok(prefix, CEGA_JSON_PREFIX_DELIM);
+   
+  /* walk through other tokens */
+  int j = r;
+  while( j>0 && part != NULL ) {
+    t++;
+    D3( "Finding part \"%s\" in JSON", part );
+    
+    while(j>0 && !KEYEQ(cres->body, t, part)){
+      D3("nope... %.*s [%d items]", t->end-t->start,cres->body + t->start, t->size);
+      int k=get_size(t+1)+1;
+      j-=k;
+      t+=k;
+    }
+
+    if( j<=0 ){ D1("We have exhausted all the tokens"); rc = 1; goto BAILOUT; }
+
+    D3( "%s found", part );
+    t++; /* next */
+    if( t->type != JSMN_OBJECT ){ D1("JSON object expected"); rc = 1; goto BAILOUT; }
+    
+    part = strtok(NULL, CEGA_JSON_PREFIX_DELIM);
+  }
+   
+  if( j<=0 ){ D1("We have exhausted all the tokens"); rc = 1; goto BAILOUT; }
+
+  D1("ROOT %.*s [%d items]", t->end-t->start,cres->body + t->start, t->size);
+
+  int max = t->size;
+  /* if( max<5 ){ D1("Invalid JSON"); rc = 1; goto BAILOUT; } */
+  int i;
+  t++; /* next token */
+  rc = 0;
+  for (i = 0; i < max; i++, t+=t->size+1) {
+
+    if(t->type == JSMN_STRING){
+
+      if( KEYEQ(cres->body, t, CEGA_JSON_USER) ){
+	t+=t->size; /* get to the value */
+	username = strndup(cres->body + t->start, t->end-t->start);
+      } else if( KEYEQ(cres->body, t, CEGA_JSON_PWD) ){
+	t+=t->size; /* get to the value */
+	pwd = strndup(cres->body + t->start, t->end-t->start);
+      } else if( KEYEQ(cres->body, t, CEGA_JSON_GECOS) ){
+	t+=t->size; /* get to the value */
+	gecos = strndup(cres->body + t->start, t->end-t->start);
+      } else if( KEYEQ(cres->body, t, CEGA_JSON_PBK) ){
+	t+=t->size; /* get to the value */
+	pbk = strndup(cres->body + t->start, t->end-t->start);
+      } else if( KEYEQ(cres->body, t, CEGA_JSON_UID) ){
+	t+=t->size; /* get to the value */
+	char* cend;
+	uid = strtol(cres->body + t->start, (char**)&cend, 10); /* reuse cend above */
+	if( (cend != (cres->body + t->end)) ) uid=-1; /* error when cend does not point to end+1 */
+      } else {
+	D3("Unexpected key: %.*s with %d items", t->end-t->start, cres->body + t->start, t->size);
+	t+=t->size; /* get to the value */
+	D3("of type %s with %d items", TYPE2STR(t->type), t->size);
+      }
+    } else {
+      D2("Not a string token");
+      rc++;
+    }
+  }
+
+  if(rc) { D1("%d errors while parsing the root object", rc); goto BAILOUT; }
 
   /* Checking the data */
-  if( (!pwd && !pbk) || !gecos || uid <= 0 ){ rc = 1; }
-  else { rc = cb(username, (uid_t)(uid + options->uid_shift), pwd, pbk, gecos); }
+  if( !pwd && !pbk ) rc++;
+  if( uid <= 0 ) rc++;
+  /* if( !gecos ) rc++; */
+  if( !gecos ) gecos = strdup("LocalEGA User");
 
-  /* Cleanup for JV */
-  jv_free(parsed_response);
+  if(rc) { D1("We found %d errors", rc); }
+  else { rc = cb(username, (uid_t)(uid + options->uid_shift), pwd, pbk, gecos); }
 
 BAILOUT:
   if(cres)free(cres);
-  if(jq)jq_teardown(&jq);
+  if(tokens)free(tokens);
+  if(username)free(username);
+  if(pwd)free(pwd);
+  if(pbk)free(pbk);
+  if(gecos)free(gecos);
   curl_easy_cleanup(curl);
   curl_global_cleanup();
   return rc;

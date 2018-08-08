@@ -14,7 +14,7 @@ CC=gcc
 LD=ld
 AS=gcc -c
 CFLAGS=-Wall -Wstrict-prototypes -Werror -fPIC -I. -I/usr/local/include -O2
-LIBS=-lpam -lcurl -ljq -L/usr/local/lib -lsqlite3
+LIBS=-lpam -lcurl -L/usr/local/lib -lsqlite3
 
 ifdef SYSLOG
 CFLAGS += -DHAS_SYSLOG
@@ -23,15 +23,15 @@ endif
 EGA_LIBDIR=/usr/local/lib/ega
 EGA_BINDIR=/usr/local/bin
 
-HEADERS = utils.h config.h backend.h cega.h homedir.h $(wildcard blowfish/*.h)
+HEADERS = utils.h config.h backend.h cega.h homedir.h $(wildcard jsmn/*.h) $(wildcard blowfish/*.h)
 
-NSS_SOURCES = nss.c config.c backend.c cega.c homedir.c
+NSS_SOURCES = nss.c config.c backend.c cega.c homedir.c $(wildcard jsmn/*.c)
 NSS_OBJECTS = $(NSS_SOURCES:%.c=%.o)
 
-PAM_SOURCES = pam.c config.c backend.c cega.c homedir.c $(wildcard blowfish/*.c)
+PAM_SOURCES = pam.c config.c backend.c cega.c homedir.c $(wildcard jsmn/*.c) $(wildcard blowfish/*.c)
 PAM_OBJECTS = $(PAM_SOURCES:%.c=%.o) blowfish/x86.o
 
-KEYS_SOURCES = keys.c config.c backend.c cega.c
+KEYS_SOURCES = keys.c config.c backend.c cega.c $(wildcard jsmn/*.c)
 KEYS_OBJECTS = $(KEYS_SOURCES:%.c=%.o)
 
 .PHONY: all debug clean install install-nss install-pam
