@@ -23,15 +23,15 @@ endif
 EGA_LIBDIR=/usr/local/lib/ega
 EGA_BINDIR=/usr/local/bin
 
-HEADERS = utils.h config.h backend.h cega.h homedir.h $(wildcard jsmn/*.h) $(wildcard blowfish/*.h)
+HEADERS = utils.h config.h backend.h json.h cega.h homedir.h $(wildcard jsmn/*.h) $(wildcard blowfish/*.h)
 
-NSS_SOURCES = nss.c config.c backend.c cega.c homedir.c $(wildcard jsmn/*.c)
+NSS_SOURCES = nss.c config.c backend.c json.c cega.c homedir.c $(wildcard jsmn/*.c)
 NSS_OBJECTS = $(NSS_SOURCES:%.c=%.o)
 
-PAM_SOURCES = pam.c config.c backend.c cega.c homedir.c $(wildcard jsmn/*.c) $(wildcard blowfish/*.c)
+PAM_SOURCES = pam.c config.c backend.c json.c cega.c homedir.c $(wildcard jsmn/*.c) $(wildcard blowfish/*.c)
 PAM_OBJECTS = $(PAM_SOURCES:%.c=%.o) blowfish/x86.o
 
-KEYS_SOURCES = keys.c config.c backend.c cega.c $(wildcard jsmn/*.c)
+KEYS_SOURCES = keys.c config.c backend.c json.c cega.c $(wildcard jsmn/*.c)
 KEYS_OBJECTS = $(KEYS_SOURCES:%.c=%.o)
 
 .PHONY: all debug clean install install-nss install-pam
