@@ -35,8 +35,7 @@ valid_options(void)
 
   if(!options->ega_dir           ) { D3("Invalid ega_dir");          valid = false; }
   if(!options->ega_dir_attrs     ) { D3("Invalid ega_dir_attrs");    valid = false; }
-  if(!options->ega_fuse_flags    ) { D3("Invalid ega_fuse_flags");   valid = false; }
-  if(!options->ega_fuse_exec     ) { D3("Invalid ega_fuse_exec");    valid = false; }
+  if(!options->ega_dir_umask     ) { D3("Invalid ega_dir_umask");    valid = false; }
 
   if(!options->db_path           ) { D3("Invalid db_path");          valid = false; }
 
@@ -101,7 +100,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
 	  
     } else val = NULL; /* could not find the '=' sign */
 	
-    if(!strcmp(key, "ega_dir_umask" )) { options->ega_dir_umask = strtol(val, NULL, 8); }
+    if(!strcmp(key, "ega_dir_umask" )) { options->ega_dir_umask = strtol(val, NULL, 8); } /* ok when val contains a comment #... */
     if(!strcmp(key, "ega_dir_attrs" )) { options->ega_dir_attrs = strtol(val, NULL, 8); }
     if(!strcmp(key, "ega_uid_shift" )) { if( !sscanf(val, "%u" , &(options->uid_shift) )) options->uid_shift = -1; }
     if(!strcmp(key, "cache_ttl"     )) { if( !sscanf(val, "%u" , &(options->cache_ttl) )) options->cache_ttl = -1; }
@@ -109,8 +108,6 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
    
     INJECT_OPTION(key, "db_path"           , val, options->db_path          );
     INJECT_OPTION(key, "ega_dir"           , val, options->ega_dir          );
-    INJECT_OPTION(key, "ega_fuse_exec"     , val, options->ega_fuse_exec    );
-    INJECT_OPTION(key, "ega_fuse_flags"    , val, options->ega_fuse_flags   );
     INJECT_OPTION(key, "prompt"            , val, options->prompt           );
     INJECT_OPTION(key, "ega_shell"         , val, options->shell            );
     INJECT_OPTION(key, "cega_endpoint_name", val, options->cega_endpoint_name);
@@ -129,7 +126,6 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
 	D2("Could not parse the chroot_isolation: Using %s instead.", ((options->chroot)?"yes":"no"));
       }
     }	
-
   }
 
   return 0;

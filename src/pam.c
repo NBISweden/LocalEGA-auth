@@ -178,6 +178,7 @@ pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 
   /* Construct homedir */
   char *homedir = strjoina(options->ega_dir, "/", username);
+  D1("Username: %s, Homedir %s", username, homedir);
 
   /* Handling umask */
   D1("Setting umask to %o", options->ega_dir_umask);

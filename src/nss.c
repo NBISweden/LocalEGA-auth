@@ -7,7 +7,6 @@
 #include "cega.h"
 #include "homedir.h"
 
-
 /*
  * passwd functions
  */

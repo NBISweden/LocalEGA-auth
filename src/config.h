@@ -27,12 +27,11 @@ struct options_s {
 
   char* db_path;           /* db file path */
 
+  /* Homedir */
   char* ega_dir;           /* EGA main inbox directory */
   long int ega_dir_attrs;  /* in octal form */
   mode_t ega_dir_umask;    /* user process's mask */
-
-  char* ega_fuse_exec;     /* LegaFS fuse executable */
-  char* ega_fuse_flags;    /* Mount flags for fuse directory per user */
+  bool chroot;             /* sandboxing the users in their home directory */
 
   /* Contacting Central EGA (vie REST call) */
   char* cega_endpoint_name;   /* https://central_ega/user/<some-name> | returns a triplet in JSON format */
@@ -40,8 +39,6 @@ struct options_s {
   char* cega_json_prefix;  /* Searching with jq for the user data using this prefix */
   char* cega_creds;        /* for authentication: user:password */
   char* ssl_cert;          /* path the SSL certificate to contact Central EGA */
-
-  bool chroot;             /* sandboxing the users in their home directory */
 
   char* x; /* internal user */
 };
