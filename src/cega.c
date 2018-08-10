@@ -22,7 +22,7 @@ curl_callback (void* contents, size_t size, size_t nmemb, void* userdata) {
   r->body = (char *) realloc(r->body, r->size + realsize + 1);
 
   /* check buffer */
-  if (r->body == NULL) { D2("ERROR: Failed to expand buffer for cURL"); return -1; }
+  if (r->body == NULL) { D1("ERROR: Failed to expand buffer for cURL"); return -1; }
 
   /* copy contents to buffer */
   memcpy(&(r->body[r->size]), contents, realsize);
@@ -51,7 +51,7 @@ cega_resolve(const char *endpoint,
   curl_global_init(CURL_GLOBAL_DEFAULT);
   curl = curl_easy_init();
 
-  if(!curl) { D2("libcurl init failed"); goto BAILOUT; }
+  if(!curl) { D1("libcurl init failed"); goto BAILOUT; }
 
   /* Preparing result */
   cres = (struct curl_res_s*)malloc(sizeof(struct curl_res_s));
@@ -103,10 +103,10 @@ cega_resolve(const char *endpoint,
 BAILOUT:
   if(cres->body)free(cres->body);
   if(cres)free(cres);
-  if(username){ D1("Freeing username at %p", username); free(username); }
-  if(pwd){ D1("Freeing pwd at %p", pwd); free(pwd); }
-  if(pbk){ D1("Freeing pbk at %p", pbk); free(pbk); }
-  if(gecos){ D1("Freeing gecos at %p", gecos ); free(gecos); }
+  if(username){ D3("Freeing username at %p", username); free(username); }
+  if(pwd){ D3("Freeing pwd at %p", pwd); free(pwd); }
+  if(pbk){ D3("Freeing pbk at %p", pbk); free(pbk); }
+  if(gecos){ D3("Freeing gecos at %p", gecos ); free(gecos); }
   curl_easy_cleanup(curl);
   curl_global_cleanup();
   return rc;

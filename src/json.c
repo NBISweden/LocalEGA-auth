@@ -153,7 +153,7 @@ found:
 #endif
 
 BAILOUT:
-  if(tokens){ D1("Freeing tokens at %p", tokens); free(tokens); }
-  if(prefix){ D1("Freeing prefix at %p", prefix ); free(prefix); }
+  if(tokens){ D3("Freeing tokens at %p", tokens); free(tokens); }
+  if(prefix){ D3("Freeing prefix at %p", prefix ); free(prefix); }
   return rc;
 }
