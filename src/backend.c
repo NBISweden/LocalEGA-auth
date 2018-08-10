@@ -22,7 +22,6 @@
 
 
 static sqlite3* db = NULL;
-char* syslog_name = "EGA";
 
 /*
  * Constructor/Destructor when the library is loaded
@@ -185,7 +184,7 @@ int backend_getpwuid_r(uid_t uid, struct passwd *result, char *buffer, size_t bu
 
   /* Convert to struct PWD */
   if( (rc = _col2txt(stmt, 0, &(result->pw_name), &buffer, &buflen)) ) goto BAILOUT;
-  /* if( rc = copy2buffer("x"     , &(result->pw_passwd), &buffer, &buflen) ) goto BAILOUT; */
+  if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ){ rc = -1; goto BAILOUT; }
   result->pw_uid = uid;
   result->pw_gid = options->gid;
   if( (rc = _col2txt(stmt, 2, &(result->pw_gecos), &buffer, &buflen)) ) goto BAILOUT;
@@ -215,9 +214,8 @@ backend_getpwnam_r(const char* username, struct passwd *result, char* buffer, si
 
   /* Convert to struct PWD */
   result->pw_name = (char*)username;
-  /* if( (rc = _col2txt(stmt, 0, &(result->pw_name), &buffer, &buflen)) ) goto BAILOUT; */
-  /* if( (rc = copy2buffer("x"     , &(result->pw_passwd), &buffer, &buflen)) ) goto BAILOUT; */
-  result->pw_passwd = options->x;
+  /* if( (rc = _col2txt(stmt, 0, &(result->pw_name), &buffer, &buflen)) ){ rc = -1; goto BAILOUT; } */
+  if( copy2buffer("x"     , &(result->pw_passwd), &buffer, &buflen) < 0 ){ rc = -1; goto BAILOUT; }
   if( (rc = _col2uid(stmt, 1, &(result->pw_uid))) ) goto BAILOUT;
   result->pw_gid = options->gid;
   if( (rc = _col2txt(stmt, 2, &(result->pw_gecos), &buffer, &buflen)) ) goto BAILOUT;

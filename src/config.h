@@ -39,8 +39,6 @@ struct options_s {
   char* cega_json_prefix;  /* Searching with jq for the user data using this prefix */
   char* cega_creds;        /* for authentication: user:password */
   char* ssl_cert;          /* path the SSL certificate to contact Central EGA */
-
-  char* x; /* internal user */
 };
 
 typedef struct options_s options_t;

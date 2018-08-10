@@ -1,11 +1,13 @@
 #include <ctype.h>
 #include <errno.h>
 #include <grp.h>
+#include <strings.h>
 
 #include "utils.h"
 #include "config.h"
 
 options_t* options = NULL;
+char* syslog_name = "EGA";
 
 void
 cleanconfig(void)
@@ -71,8 +73,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   COPYVAL(PROMPT    , options->prompt           );
   COPYVAL(CEGA_CERT , options->ssl_cert         );
   COPYVAL(EGA_SHELL , options->shell            );
-  COPYVAL(""        , options->cega_json_prefix ); /* default */
-  COPYVAL("x"       , options->x ); /* internal use */
+  options->cega_json_prefix = '\0'; /* default */
 
   /* Parse line by line */
   while (getline(&line, &len, fp) > 0) {
@@ -117,16 +118,18 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     INJECT_OPTION(key, "ssl_cert"          , val, options->ssl_cert         );
 
 
-    if(!strcmp(key, "chroot_isolation")) {
-      if(!strcmp(val, "yes") || !strcmp(val, "true") || !strcmp(val, "1") || !strcmp(val, "on")){
+    if(!strcmp(key, "sftp_chroot")) {
+      if(!strcasecmp(val, "yes") || !strcasecmp(val, "true") || !strcmp(val, "1") || !strcasecmp(val, "on")){
 	options->chroot = true;
-      } else if(!strcmp(val, "no") || !strcmp(val, "false") || !strcmp(val, "0") || !strcmp(val, "off")){
+      } else if(!strcasecmp(val, "no") || !strcasecmp(val, "false") || !strcmp(val, "0") || !strcasecmp(val, "off")){
 	options->chroot = false;
       } else {
-	D2("Could not parse the chroot_isolation: Using %s instead.", ((options->chroot)?"yes":"no"));
+	D2("Could not parse the sftp_chroot: Using %s instead.", ((options->chroot)?"yes":"no"));
       }
     }	
   }
+
+  D1("sftp_chroot: %s", ((options->chroot)?"yes":"no"));
 
   return 0;
 }

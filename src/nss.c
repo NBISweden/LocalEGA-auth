@@ -59,7 +59,7 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
     char* homedir = strjoina(options->ega_dir, "/", uname);
     D1("User id %u [Username %s] [Homedir %s]", ega_uid, uname, homedir);
     if( copy2buffer(uname, &(result->pw_name)   , &buffer, &buflen) < 0 ) { return -1; }
-    result->pw_passwd = options->x;
+    if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ){ return -1; }
     result->pw_uid = uid;
     result->pw_gid = options->gid;
     if( copy2buffer(homedir, &(result->pw_dir)   , &buffer, &buflen) < 0 ) { return -1; }
@@ -122,7 +122,7 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
     char* homedir = strjoina(options->ega_dir, "/", username);
     D1("Username %s [Homedir %s]", uname, homedir);
     result->pw_name = (char*)username; /* no need to copy to buffer */
-    result->pw_passwd = options->x;
+    if( copy2buffer("x", &(result->pw_passwd), &buffer, &buflen) < 0 ){ return -1; }
     result->pw_uid = uid;
     result->pw_gid = options->gid;
     if( copy2buffer(homedir, &(result->pw_dir)   , &buffer, &buflen) < 0 ) { return -1; }
