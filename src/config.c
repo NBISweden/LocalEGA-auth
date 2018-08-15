@@ -6,6 +6,18 @@
 #include "utils.h"
 #include "config.h"
 
+#define CFGFILE "/etc/ega/auth.conf"
+#define CEGA_CERT "/etc/ega/cega.pem"
+#define PROMPT "Please, enter your EGA password: "
+#define UMASK 0027 /* no permission for world */
+
+#define CACHE_TTL 3600 // 1h in seconds.
+#define EGA_UID_SHIFT 10000
+#define EGA_SHELL "/bin/bash"
+
+#define ENABLE_CHROOT false
+#define CHROOT_OPTION "chroot_sessions"
+
 options_t* options = NULL;
 char* syslog_name = "EGA";
 
@@ -118,7 +130,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     INJECT_OPTION(key, "ssl_cert"          , val, options->ssl_cert         );
 
 
-    if(!strcmp(key, "sftp_chroot")) {
+    if(!strcmp(key, CHROOT_OPTION)) {
       if(!strcasecmp(val, "yes") || !strcasecmp(val, "true") || !strcmp(val, "1") || !strcasecmp(val, "on")){
 	options->chroot = true;
       } else if(!strcasecmp(val, "no") || !strcasecmp(val, "false") || !strcmp(val, "0") || !strcasecmp(val, "off")){

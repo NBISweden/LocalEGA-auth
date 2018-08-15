@@ -5,16 +5,6 @@
 #include <stdbool.h>
 #include <sys/types.h> 
 
-#define CFGFILE "/etc/ega/auth.conf"
-#define CEGA_CERT "/etc/ega/cega.pem"
-#define PROMPT "Please, enter your EGA password: "
-#define ENABLE_CHROOT false
-#define UMASK 0027 /* no permission for world */
-
-#define CACHE_TTL 3600 // 1h in seconds.
-#define EGA_UID_SHIFT 10000
-#define EGA_SHELL "/bin/bash"
-
 struct options_s {
   char* cfgfile;
   char* buffer;
