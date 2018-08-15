@@ -136,12 +136,12 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
       } else if(!strcasecmp(val, "no") || !strcasecmp(val, "false") || !strcmp(val, "0") || !strcasecmp(val, "off")){
 	options->chroot = false;
       } else {
-	D2("Could not parse the sftp_chroot: Using %s instead.", ((options->chroot)?"yes":"no"));
+	D2("Could not parse the "CHROOT_OPTION": Using %s instead.", ((options->chroot)?"yes":"no"));
       }
     }	
   }
 
-  D1("sftp_chroot: %s", ((options->chroot)?"yes":"no"));
+  D1(CHROOT_OPTION": %s", ((options->chroot)?"yes":"no"));
 
   return 0;
 }
