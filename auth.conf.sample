@@ -3,8 +3,8 @@
 ##########################################
 
 # The username will be appended to the endpoints
-cega_endpoint_name = http://cega_users/user/
-cega_endpoint_uid = http://cega_users/id/
+cega_endpoint_username = http://cega_users/some/path/to/users/%s
+cega_endpoint_uid = http://cega_users/some/other/path/to/users/or/not/%u
 cega_creds = user:password
 
 # Selects where the JSON object is rooted
