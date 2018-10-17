@@ -54,7 +54,7 @@ valid_options(void)
   if(!options->db_path           ) { D3("Invalid db_path");          valid = false; }
 
   if(!options->cega_creds        ) { D3("Invalid cega_creds");       valid = false; }
-  if(!options->cega_endpoint_name) { D3("Invalid cega_endpoint for usernames");    valid = false; }
+  if(!options->cega_endpoint_username) { D3("Invalid cega_endpoint for usernames");    valid = false; }
   if(!options->cega_endpoint_uid ) { D3("Invalid cega_endpoint for user ids");    valid = false; }
 
   /* if(options->ssl_cert          ) { D3("Invalid ssl_cert");      valid = false; } */
@@ -80,6 +80,9 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   options->chroot = ENABLE_CHROOT;
   options->ega_dir_umask = (mode_t)UMASK;
   options->cache_ttl = CACHE_TTL;
+
+  options->cega_endpoint_username_len = 0;
+  options->cega_endpoint_uid_len = 0;
 
   COPYVAL(CFGFILE   , options->cfgfile          );
   COPYVAL(PROMPT    , options->prompt           );
@@ -123,7 +126,7 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
     INJECT_OPTION(key, "ega_dir"           , val, options->ega_dir          );
     INJECT_OPTION(key, "prompt"            , val, options->prompt           );
     INJECT_OPTION(key, "ega_shell"         , val, options->shell            );
-    INJECT_OPTION(key, "cega_endpoint_name", val, options->cega_endpoint_name);
+    INJECT_OPTION(key, "cega_endpoint_username", val, options->cega_endpoint_username);
     INJECT_OPTION(key, "cega_endpoint_uid" , val, options->cega_endpoint_uid);
     INJECT_OPTION(key, "cega_creds"        , val, options->cega_creds       );
     INJECT_OPTION(key, "cega_json_prefix"  , val, options->cega_json_prefix );
@@ -142,6 +145,11 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
   }
 
   D1(CHROOT_OPTION": %s", ((options->chroot)?"yes":"no"));
+
+  if(options->cega_endpoint_username)
+    options->cega_endpoint_username_len = strlen(options->cega_endpoint_username) - 1; /* count away %u, add \0 */
+  if(options->cega_endpoint_uid)
+    options->cega_endpoint_uid_len = strlen(options->cega_endpoint_uid) - 1; /* count away %u, add \0 */
 
   return 0;
 }

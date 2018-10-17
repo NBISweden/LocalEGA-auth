@@ -33,5 +33,8 @@ main(int argc, const char **argv)
     return rc;
   }
 
-  return cega_resolve(strjoina(options->cega_endpoint_name, username), print_pubkey);
+  _cleanup_str_ char* endpoint = (char*)malloc((options->cega_endpoint_username_len + strlen(username)) * sizeof(char));
+  if(!endpoint){ D1("Memory allocation error"); return 1; }
+  if(sprintf(endpoint, options->cega_endpoint_username, username) < 0){ D1("Endpoint formatting error"); return 2; }
+  return cega_resolve(endpoint, print_pubkey);
 }

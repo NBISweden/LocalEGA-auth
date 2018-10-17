@@ -9,8 +9,8 @@
 /* Will search for options->cega_json_prefix first, and then those exact ones */
 #define CEGA_JSON_USER  "username"
 #define CEGA_JSON_UID   "uid"
-#define CEGA_JSON_PWD   "password_hash"
-#define CEGA_JSON_PBK   "pubkey"
+#define CEGA_JSON_PWD   "passwordHash"
+#define CEGA_JSON_PBK   "sshPublicKey"
 #define CEGA_JSON_GECOS "gecos"
 
 #ifdef DEBUG
@@ -98,8 +98,14 @@ inspect:
 
 found:
     D3( "%s found", part );
-    t++; /* next should be an object */
+    t++; /* next should be the root object or array */
+
+    /* In case the root is an array, fetch the first element */
+    if( t->type == JSMN_ARRAY ){ t++; }
+
+    /* We should now point to the root object */
     if( t->type != JSMN_OBJECT ){ D1("JSON object expected, but got %s", TYPE2STR(t->type)); rc = 1; goto BAILOUT; }
+
     part = strtok(NULL, CEGA_JSON_PREFIX_DELIM);
   }
 
