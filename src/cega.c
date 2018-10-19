@@ -1,104 +1,72 @@
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdbool.h>
-
 #include <curl/curl.h>
-#include <jq.h>
+#include <sys/types.h>
 
 #include "utils.h"
-#include "config.h"
 #include "backend.h"
+#include "json.h"
+#include "cega.h"
 
 struct curl_res_s {
   char *body;
   size_t size;
 };
 
+
 /* callback for curl fetch */
 size_t
 curl_callback (void* contents, size_t size, size_t nmemb, void* userdata) {
   const size_t realsize = size * nmemb;                      /* calculate buffer size */
-  struct curl_res_s *cres = (struct curl_res_s*) userdata;   /* cast pointer to fetch struct */
+  struct curl_res_s *r = (struct curl_res_s*) userdata;   /* cast pointer to fetch struct */
 
   /* expand buffer */
-  cres->body = (char *) realloc(cres->body, cres->size + realsize + 1);
+  r->body = (char *) realloc(r->body, r->size + realsize + 1);
 
   /* check buffer */
-  if (cres->body == NULL) { D2("ERROR: Failed to expand buffer in curl_callback"); return -1; }
+  if (r->body == NULL) { D1("ERROR: Failed to expand buffer for cURL"); return -1; }
 
   /* copy contents to buffer */
-  memcpy(&(cres->body[cres->size]), contents, realsize);
-  cres->size += realsize;
-  cres->body[cres->size] = '\0';
+  memcpy(&(r->body[r->size]), contents, realsize);
+  r->size += realsize;
+  r->body[r->size] = '\0';
 
   return realsize;
 }
 
-static int
-get_from_json(jq_state *jq, const char* query, jv json, const char** res){
-  
-  D3("Processing query: %s", query);
-
-  if (!jq_compile(jq, query)){ D3("Invalid query"); return 1; }
-
-  jq_start(jq, json, 0); // no flags
-  jv result = jq_next(jq);
-  if(jv_is_valid(result)){ // no consume
-
-    if (jv_get_kind(result) == JV_KIND_STRING) { // no consume
-      *res = jv_string_value(result); // consumed
-      D3("Valid result: %s", *res);
-    } else {
-      D3("Valid result but not a string");
-      //jv_dump(result, 0);
-      jv_free(result);
-    }
-  }
-  return 0;
-}
-
-bool
-fetch_from_cega(const char *username)
+int
+cega_resolve(const char *endpoint,
+	     int (*cb)(char*, uid_t, char*, char*, char*))
 {
-  CURL *curl;
-  CURLcode res;
-  bool status = false;
-  char* endpoint = NULL;
-  struct curl_res_s *cres = NULL;
-  jv parsed_response;
-  jq_state* jq = NULL;
-  const char *pwd = NULL;
-  const char *pbk = NULL;
+  int rc = 1; /* error */
+  struct curl_res_s* cres = NULL;
+  CURL* curl = NULL;
+  char *username = NULL;
+  char *pwd = NULL;
+  char *pbk = NULL;
+  char *gecos = NULL;
+  int uid = -1;
 
-  if(!options->with_cega){ D1("Contacting CentralEGA is disabled"); return false; }
+  D1("Contacting %s", endpoint);
 
-  D1("Contacting cega for user: %s", username);
-
-  if(!options->cega_creds){ D2("Empty CEGA credentials"); return 1; /* early quit */ }
-
+  /* Preparing cURL */
   curl_global_init(CURL_GLOBAL_DEFAULT);
   curl = curl_easy_init();
 
-  if(!curl) { D2("libcurl init failed"); goto BAILOUT; }
+  if(!curl) { D1("libcurl init failed"); goto BAILOUT; }
 
-  /* Formatting the endpoint */
-  endpoint = strjoina(options->cega_endpoint, username);
-  D2("CEGA endpoint: %s", endpoint);
-
-  /* Preparing CURL */
-  D2("Preparing CURL");
+  /* Preparing result */
   cres = (struct curl_res_s*)malloc(sizeof(struct curl_res_s));
+  if(!cres){ D1("memory allocation failure for the cURL result"); goto BAILOUT; }
   cres->body = NULL;
   cres->size = 0;
 
-  curl_easy_setopt(curl, CURLOPT_NOPROGRESS    , 1L               ); /* shut off the progress meter */
+  /* Preparing the request */
   curl_easy_setopt(curl, CURLOPT_URL           , endpoint         );
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION , curl_callback    );
   curl_easy_setopt(curl, CURLOPT_WRITEDATA     , (void*)cres      );
   curl_easy_setopt(curl, CURLOPT_FAILONERROR   , 1L               ); /* when not 200 */
   curl_easy_setopt(curl, CURLOPT_HTTPAUTH      , CURLAUTH_BASIC);
   curl_easy_setopt(curl, CURLOPT_USERPWD       , options->cega_creds);
+  /* curl_easy_setopt(curl, CURLOPT_NOPROGRESS    , 0L               ); */ /* enable progress meter */
   /* curl_easy_setopt(curl, CURLOPT_SSLCERT      , options->ssl_cert); */
   /* curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE  , "PEM"            ); */
 
@@ -107,40 +75,39 @@ fetch_from_cega(const char *username)
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
 #endif
 
-  /* Perform the request, res will get the return code */
-  res = curl_easy_perform(curl);
-  D2("CEGA Request done");
+  /* Perform the request */
+  CURLcode res = curl_easy_perform(curl);
   if(res != CURLE_OK){ D2("curl_easy_perform() failed: %s", curl_easy_strerror(res)); goto BAILOUT; }
 
+  /* Successful cURL */
+  D1("JSON string [size %zu]: %s", cres->size, cres->body);
+  
   D2("Parsing the JSON response");
-  parsed_response = jv_parse(cres->body);
+  rc = parse_json(cres->body, cres->size, 
+		  &username, &pwd, &pbk, &gecos, &uid);
 
-  if (!jv_is_valid(parsed_response)) { D2("Invalid response"); goto BAILOUT; }
+  if(rc) { D1("We found %d errors", rc); goto BAILOUT; }
 
-  /* Preparing the queries */
-  jq = jq_init();
-  if (jq == NULL) { D2("jq error with malloc"); goto BAILOUT; }
+  /* Checking the data */
+  if( !username ) rc++;
+  if( !pwd && !pbk ) rc++;
+  if( uid <= 0 ) rc++;
+  /* if( !gecos ) rc++; */
+  if( !gecos ) gecos = strdup("LocalEGA User");
 
-  int rc = 
-    get_from_json(jq, options->cega_json_passwd, jv_copy(parsed_response), &pwd) +
-    get_from_json(jq, options->cega_json_pubkey, jv_copy(parsed_response), &pbk);
+  if(rc) { D1("We found %d errors", rc); goto BAILOUT; }
 
-  if(rc){
-    D1("WARNING: CentralEGA JSON received, but parsed with %d invalid quer%s", rc, (rc>1)?"ies":"y");
-  } else {
-    D1("CentralEGA JSON response correctly parsed");
-  }
-
-  jv_free(parsed_response);
-
-  /* Adding to the database, if pwd and pbk are not both null */
-  status = (pwd || pbk) && backend_add_user(username, pwd, pbk);
+  /* Callback: What to do with the data */
+  rc = cb(username, (uid_t)(uid + options->uid_shift), pwd, pbk, gecos);
 
 BAILOUT:
-  D1("User %s%s found in CentralEGA", username, (status)?"":" not");
+  if(cres->body)free(cres->body);
   if(cres)free(cres);
-  jq_teardown(&jq); /* should free pwd and pbk */
+  if(username){ D3("Freeing username at %p", username); free(username); }
+  if(pwd){ D3("Freeing pwd at %p", pwd); free(pwd); }
+  if(pbk){ D3("Freeing pbk at %p", pbk); free(pbk); }
+  if(gecos){ D3("Freeing gecos at %p", gecos ); free(gecos); }
   curl_easy_cleanup(curl);
   curl_global_cleanup();
-  return status;
+  return rc;
 }

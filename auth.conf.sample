@@ -1,38 +1,59 @@
-##################
-# Central EGA
-#
-# The username will be appended to the endpoint
-# eg the endpoint for 'john' will be 
-# http://cega_users/user/john
-##################
+##########################################
+# Remote database settings (using ReST)
+##########################################
 
-enable_cega = yes
-cega_endpoint = http://cega_users/user/
+# The username will be appended to the endpoints
+cega_endpoint_name = http://cega_users/user/
+cega_endpoint_uid = http://cega_users/id/
 cega_creds = user:password
-cega_json_passwd = .password
-cega_json_pubkey = .public_key
 
-##################
-# NSS & PAM
-##################
+# Selects where the JSON object is rooted
+# Use a dotted format à la JQ, eg level1.level2.level3
+# Default: empty
+cega_json_prefix = 
 
-# expiration = 36000.0
-# prompt = Knock Knock:
-# cache_dir = /ega/cache
-# ega_gecos = EGA User
-# ega_shell = /sbin/nologin
+##########################################
+# Local database settings (for NSS & PAM)
+##########################################
 
-ega_uid = 1000
-ega_gid = 1000
+# Absolute path to the SQLite database.
+# Required setting. No default value.
+db_path = /run/ega-users.db
 
+# Sets how long a cache entry is valid, in seconds.
+# Default: 3600 (ie 1h).
+# cache_ttl = 86400
+
+# Per site configuration, to shift the users id range
+# Default: 10000
+#ega_uid_shift = 1000
+
+# The group to which all users belong.
+# For the moment, only only.
+# Required setting. No default.
+ega_gid = 997
+
+# This causes the PAM sessions to be chrooted into the user's home directory.
+# Useful for SFTP connections, but complicated for regular ssh
+# connections (since no proper environment exists there).
+# Default: false
+chroot_sessions = yes
+
+# Per site configuration, where the home directories are located
+# The user's name will be appended.
+# Required setting. No default.
 ega_dir = /ega/inbox
 ega_dir_attrs = 2750 # rwxr-s---
 
-##################
-# FUSE mount
-##################
-ega_fuse_dir = /lega
-# /username will be appended.
-# Example: for user 'john', the mountpoint will be /lega/john
-ega_fuse_exec = /usr/bin/ega-fs
-ega_fuse_flags = nodev,noexec,uid=1000,gid=1000,suid
+# sets the umask for each session (in octal format)
+# Default: 027 # world-denied
+#ega_dir_umask = 027
+
+# When the password is asked
+# Default: "Please, enter your EGA password: "
+#prompt = Knock Knock:
+
+# The user's login shell.
+# Default: /bin/bash
+#ega_shell = /bin/aspshell-r
+

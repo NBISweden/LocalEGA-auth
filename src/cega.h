@@ -1,8 +1,9 @@
 #ifndef __LEGA_CENTRAL_H_INCLUDED__
 #define __LEGA_CENTRAL_H_INCLUDED__
 
-#include <stdbool.h>
+#include <sys/types.h>
 
-bool fetch_from_cega(const char *username);
+int cega_resolve(const char *endpoint,
+		 int (*cb)(char* username, uid_t uid, char* password_hash, char* pubkey, char* gecos));
 
 #endif /* !__LEGA_CENTRAL_H_INCLUDED__ */

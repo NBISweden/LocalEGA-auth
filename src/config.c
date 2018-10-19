@@ -1,15 +1,25 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <errno.h>
 #include <ctype.h>
+#include <errno.h>
+#include <grp.h>
+#include <strings.h>
 
 #include "utils.h"
 #include "config.h"
 
-options_t* options = NULL;
+#define CFGFILE "/etc/ega/auth.conf"
+#define CEGA_CERT "/etc/ega/cega.pem"
+#define PROMPT "Please, enter your EGA password: "
+#define UMASK 0027 /* no permission for world */
 
-bool config_not_loaded(void) { return options == NULL; }
+#define CACHE_TTL 3600 // 1h in seconds.
+#define EGA_UID_SHIFT 10000
+#define EGA_SHELL "/bin/bash"
+
+#define ENABLE_CHROOT false
+#define CHROOT_OPTION "chroot_sessions"
+
+options_t* options = NULL;
+char* syslog_name = "EGA";
 
 void
 cleanconfig(void)
@@ -24,34 +34,29 @@ cleanconfig(void)
 
 
 bool
-checkoptions(void)
+valid_options(void)
 {
   bool valid = true;
   if(!options) { D3("No config struct"); return false; }
 
   D2("Checking the config struct");
   if(options->cache_ttl < 0.0    ) { D3("Invalid cache_ttl");        valid = false; }
-  if(options->ega_uid < 0        ) { D3("Invalid ega_uid");          valid = false; }
-  if(options->ega_gid < 0        ) { D3("Invalid ega_gid");          valid = false; }
+  if(options->uid_shift < 0      ) { D3("Invalid ega_uid_shift");    valid = false; }
+  if(options->gid < 0            ) { D3("Invalid ega_gid");          valid = false; }
 
+  if(!options->shell             ) { D3("Invalid shell");            valid = false; }
   if(!options->prompt            ) { D3("Invalid prompt");           valid = false; }
 
   if(!options->ega_dir           ) { D3("Invalid ega_dir");          valid = false; }
   if(!options->ega_dir_attrs     ) { D3("Invalid ega_dir_attrs");    valid = false; }
-  if(!options->ega_fuse_flags    ) { D3("Invalid ega_fuse_flags");   valid = false; }
-  if(!options->ega_fuse_exec     ) { D3("Invalid ega_fuse_exec");    valid = false; }
+  if(!options->ega_dir_umask     ) { D3("Invalid ega_dir_umask");    valid = false; }
 
-  if(!options->cache_dir         ) { D3("Invalid cache_dir");        valid = false; }
+  if(!options->db_path           ) { D3("Invalid db_path");          valid = false; }
 
-  if(!options->ega_uid           ) { D3("Invalid ega_uid");          valid = false; }
-  if(!options->ega_gid           ) { D3("Invalid ega_gid");          valid = false; }
-  if(!options->ega_gecos         ) { D3("Invalid ega_gecos");        valid = false; }
-  if(!options->ega_shell         ) { D3("Invalid ega_shell");        valid = false; }
-
-  if(!options->cega_endpoint     ) { D3("Invalid cega_endpoint");    valid = false; }
   if(!options->cega_creds        ) { D3("Invalid cega_creds");       valid = false; }
-  if(!options->cega_json_passwd  ) { D3("Invalid cega_json_passwd"); valid = false; }
-  if(!options->cega_json_pubkey  ) { D3("Invalid cega_json_pubkey"); valid = false; }
+  if(!options->cega_endpoint_name) { D3("Invalid cega_endpoint for usernames");    valid = false; }
+  if(!options->cega_endpoint_uid ) { D3("Invalid cega_endpoint for user ids");    valid = false; }
+
   /* if(options->ssl_cert          ) { D3("Invalid ssl_cert");      valid = false; } */
 
   if(!valid){ D3("Invalid config struct from %s", options->cfgfile); }
@@ -64,20 +69,23 @@ checkoptions(void)
 static inline int
 readconfig(FILE* fp, char* buffer, size_t buflen)
 {
+  D3("Reading configuration file");
   _cleanup_str_ char* line = NULL;
   size_t len = 0;
   char *key,*eq,*val,*end;
 
   /* Default config values */
+  options->uid_shift = EGA_UID_SHIFT;
+  options->gid = -1;
+  options->chroot = ENABLE_CHROOT;
+  options->ega_dir_umask = (mode_t)UMASK;
   options->cache_ttl = CACHE_TTL;
-  options->with_cega = ENABLE_CEGA;
 
-  COPYVAL(CFGFILE   , options->cfgfile   );
-  COPYVAL(CACHE_DIR , options->cache_dir );
-  COPYVAL(PROMPT    , options->prompt    );
-  COPYVAL(CEGA_CERT , options->ssl_cert  );
-  COPYVAL(EGA_GECOS , options->ega_gecos );
-  COPYVAL(EGA_SHELL , options->ega_shell );
+  COPYVAL(CFGFILE   , options->cfgfile          );
+  COPYVAL(PROMPT    , options->prompt           );
+  COPYVAL(CEGA_CERT , options->ssl_cert         );
+  COPYVAL(EGA_SHELL , options->shell            );
+  options->cega_json_prefix = '\0'; /* default */
 
   /* Parse line by line */
   while (getline(&line, &len, fp) > 0) {
@@ -105,41 +113,43 @@ readconfig(FILE* fp, char* buffer, size_t buflen)
 	  
     } else val = NULL; /* could not find the '=' sign */
 	
-    if(!strcmp(key, "ega_dir_attrs"     )) { options->ega_dir_attrs = strtol(val, NULL, 8);    }
-    if(!strcmp(key, "ega_uid"           )) { if( !sscanf(val, "%u" , &(options->ega_uid)   )) options->ega_uid = -1; }
-    if(!strcmp(key, "ega_gid"           )) { if( !sscanf(val, "%u" , &(options->ega_gid)   )) options->ega_gid = -1; }
-    if(!strcmp(key, "cache_ttl"         )) { if( !sscanf(val, "%lf", &(options->cache_ttl) )) options->cache_ttl = -1; }
+    if(!strcmp(key, "ega_dir_umask" )) { options->ega_dir_umask = strtol(val, NULL, 8); } /* ok when val contains a comment #... */
+    if(!strcmp(key, "ega_dir_attrs" )) { options->ega_dir_attrs = strtol(val, NULL, 8); }
+    if(!strcmp(key, "ega_uid_shift" )) { if( !sscanf(val, "%u" , &(options->uid_shift) )) options->uid_shift = -1; }
+    if(!strcmp(key, "cache_ttl"     )) { if( !sscanf(val, "%u" , &(options->cache_ttl) )) options->cache_ttl = -1; }
+    if(!strcmp(key, "ega_gid"       )) { if( !sscanf(val, "%u" , &(options->gid)   )) options->gid = -1; }
+   
+    INJECT_OPTION(key, "db_path"           , val, options->db_path          );
+    INJECT_OPTION(key, "ega_dir"           , val, options->ega_dir          );
+    INJECT_OPTION(key, "prompt"            , val, options->prompt           );
+    INJECT_OPTION(key, "ega_shell"         , val, options->shell            );
+    INJECT_OPTION(key, "cega_endpoint_name", val, options->cega_endpoint_name);
+    INJECT_OPTION(key, "cega_endpoint_uid" , val, options->cega_endpoint_uid);
+    INJECT_OPTION(key, "cega_creds"        , val, options->cega_creds       );
+    INJECT_OPTION(key, "cega_json_prefix"  , val, options->cega_json_prefix );
+    INJECT_OPTION(key, "ssl_cert"          , val, options->ssl_cert         );
 
-    INJECT_OPTION(key, "ega_dir" , val, options->ega_dir);
-    INJECT_OPTION(key, "ega_gecos"     , val, options->ega_gecos     );
-    INJECT_OPTION(key, "ega_shell"     , val, options->ega_shell     );
-    INJECT_OPTION(key, "ega_fuse_exec" , val, options->ega_fuse_exec );
-    INJECT_OPTION(key, "ega_fuse_flags", val, options->ega_fuse_flags);
 
-    INJECT_OPTION(key, "cache_dir"     , val, options->cache_dir     );
-    INJECT_OPTION(key, "prompt"        , val, options->prompt        );
-    
-    INJECT_OPTION(key, "cega_endpoint"    , val, options->cega_endpoint    );
-    INJECT_OPTION(key, "cega_creds"       , val, options->cega_creds       );
-    INJECT_OPTION(key, "cega_json_passwd" , val, options->cega_json_passwd );
-    INJECT_OPTION(key, "cega_json_pubkey" , val, options->cega_json_pubkey );
-    INJECT_OPTION(key, "ssl_cert"         , val, options->ssl_cert         );
-
-    if(!strcmp(key, "enable_cega")) {
-      if(!strcmp(val, "yes") || !strcmp(val, "true")){
-	options->with_cega = true;
+    if(!strcmp(key, CHROOT_OPTION)) {
+      if(!strcasecmp(val, "yes") || !strcasecmp(val, "true") || !strcmp(val, "1") || !strcasecmp(val, "on")){
+	options->chroot = true;
+      } else if(!strcasecmp(val, "no") || !strcasecmp(val, "false") || !strcmp(val, "0") || !strcasecmp(val, "off")){
+	options->chroot = false;
       } else {
-	D2("Could not parse the enable_cega: Using %s instead.", ((options->with_cega)?"yes":"no"));
+	D2("Could not parse the "CHROOT_OPTION": Using %s instead.", ((options->chroot)?"yes":"no"));
       }
     }	
   }
+
+  D1(CHROOT_OPTION": %s", ((options->chroot)?"yes":"no"));
+
   return 0;
 }
 
 bool
 loadconfig(void)
 {
-  D2("Loading configuration %s", CFGFILE);
+  D1("Loading configuration %s", CFGFILE);
   if(options){ D2("Already loaded [@ %p]", options); return true; }
 
   _cleanup_file_ FILE* fp = NULL;
@@ -157,6 +167,8 @@ REALLOC:
   D3("Allocating buffer of size %zd", size);
   if(options->buffer)free(options->buffer);
   options->buffer = malloc(sizeof(char) * size);
+  /* memset(options->buffer, '\0', size); */
+  *(options->buffer) = '\0';
   if(!options->buffer){ D3("Could not allocate buffer of size %zd", size); return false; };
 
   if( readconfig(fp, options->buffer, size) < 0 ){
@@ -167,21 +179,8 @@ REALLOC:
   D2("Conf loaded [@ %p]", options);
 
 #ifdef DEBUG
-  return checkoptions();
+  return valid_options();
 #else
   return true;
 #endif
 }
-
-
-/*
- * Constructor/Destructor when the library is loaded
- *
- * See: http://man7.org/linux/man-pages/man3/dlopen.3.html
- *
- */
-__attribute__((constructor))
-static void initconfig(void){ D3("********** CONSTRUCTOR"); loadconfig(); }
-
-__attribute__((destructor))
-static void destroyconfig(void){ D3("********** DESTRUCTOR"); cleanconfig(); }

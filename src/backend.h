@@ -3,13 +3,30 @@
 
 #include <stdbool.h>
 #include <pwd.h>
+#include <sqlite3.h>
 
-bool backend_add_user(const char* username, const char* pwdh, const char* pubkey);
+#if SQLITE_VERSION_NUMBER < 3024000
+  #error Only SQLite 3.24+ supported
+#endif
 
-bool backend_user_found(const char* username);
-int backend_convert(const char* username, struct passwd *result, char *buffer, size_t buflen);
+#include "config.h"
 
-int backend_get_item(const char* username, const char* item, char** content);
-int backend_set_item(const char* username, const char* item, const char* content);
+int backend_add_user(const char* username,
+		     uid_t uid,
+		     const char* pwdh,
+		     const char* pubkey,
+		     const char* gecos);
+
+int backend_getpwnam_r(const char* username, struct passwd *result, char *buffer, size_t buflen);
+int backend_getpwuid_r(uid_t uid, struct passwd *result, char *buffer, size_t buflen);
+
+bool backend_get_password_hash(const char* username, char** data);
+bool backend_print_pubkey(const char* username);
+
+bool backend_has_expired(const char* username);
+
+bool backend_opened(void);
+void backend_open(void);
+void backend_close(void);
 
 #endif /* !__LEGA_BACKEND_H_INCLUDED__ */

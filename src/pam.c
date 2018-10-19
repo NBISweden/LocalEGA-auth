@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/mount.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -19,10 +21,12 @@
 #include <security/pam_ext.h>
 #include <security/pam_modutil.h>
 
-#include "utils.h"
-#include "config.h"
-#include "backend.h"
+#include <limits.h>
+
 #include "blowfish/ow-crypt.h"
+#include "utils.h"
+#include "backend.h"
+#include "cega.h"
 
 #define PAM_OPT_DEBUG			0x01
 #define PAM_OPT_USE_FIRST_PASS		0x02
@@ -56,6 +60,10 @@ void pam_options(int *flags, int argc, const char **argv)
   return;
 }
 
+/* prototype definitions. See the end of the file */
+static int _get_password_hash(const char* username, char** data);
+
+
 /*
  * authenticate user
  */
@@ -71,7 +79,7 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   struct pam_response *resp;
   int mflags = 0;
   
-  D1("Getting auth PAM module options");
+  D2("Getting auth PAM module options");
 
   rc = pam_get_user(pamh, &user, NULL);
   if (rc != PAM_SUCCESS) { D1("Can't get user: %s", pam_strerror(pamh, rc)); return rc; }
@@ -97,9 +105,6 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
     D1("Password retrieval failed: %s", pam_strerror(pamh, rc));
     return PAM_AUTH_ERR;
   }
-
-  _cleanup_str_ char* pwdh = NULL;
-  if( config_not_loaded() ) return PAM_AUTH_ERR;
 
   D1("Asking %s for password", user);
 
@@ -136,7 +141,9 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
   /* Now, we have the password */
   D1("Authenticating user %s with password", user);
 
-  rc = backend_get_item(user, PASSWORD, &pwdh);
+  _cleanup_str_ char* pwdh = NULL;
+  rc = _get_password_hash(user, &pwdh);
+  D2("Passwd hash: %s", pwdh);
 
   if(!pwdh || rc < 0){ D1("Could not load the password hash of '%s'", user); return PAM_AUTH_ERR; }
 
@@ -155,95 +162,36 @@ pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
 }
 
 /*
- * Refresh user cache entry, if it exists
- * Note: setcred runs before and after session_open
- * which means, 'after' is in a chrooted-env, so setcred fails
- * (but before succeeds)
- * So a user is refreshed right before an attempts to open a session,
- * right after a successful authentication
- */
-PAM_EXTERN int
-pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
-{
-  int rc;
-  const char *username;
-  int mflags = 0;
-
-  D1("Getting setcred PAM module options");
-  pam_options(&mflags, argc, argv);
-
-  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
-
-  if( config_not_loaded() ) return PAM_CRED_UNAVAIL;
-
-  if( !backend_user_found(username) ){ D1("'%s' not found", username); return PAM_USER_UNKNOWN; }
-
-  D1("Refreshing user %s", username);
-
-  char seconds[65];
-  sprintf(seconds, "%ld", time(NULL));
-  return (backend_set_item(username, LAST_ACCESSED, seconds) < 0)?PAM_CRED_EXPIRED:PAM_SUCCESS;
-}
-
-/*
  * Mount LegaFS, and Chroot to homedir
  */
 PAM_EXTERN int
 pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
 {
   const char *username;
-  char *mountpoint = NULL, *mount_options = NULL;
-  int rc, child;
-  struct sigaction newsa, oldsa;
+  int rc;
   int mflags = 0;
 
-  D1("Getting open session PAM module options");
+  D2("Getting open session PAM module options");
   pam_options(&mflags, argc, argv);
 
   if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
 
-  if( config_not_loaded() ) return PAM_SESSION_ERR;
+  /* Construct homedir */
+  char *homedir = strjoina(options->ega_dir, "/", username);
+  D1("Username: %s, Homedir %s", username, homedir);
 
-  /* Construct mountpoint and rootdir_options */
-  mountpoint = strjoina(options->ega_dir, "/", username);
-  mount_options = strjoina(options->ega_fuse_flags, ",user=", username);
-  D1("Mounting LegaFS for %s at %s", username, mountpoint);
-
-  /*
-   * This code arranges that the demise of the child does not cause
-   * the application to receive a signal it is not expecting - which
-   * may kill the application or worse.
-   */
-  memset(&newsa, '\0', sizeof(newsa));
-  newsa.sa_handler = SIG_DFL;
-  sigaction(SIGCHLD, &newsa, &oldsa);
-
-  /* fork */
-  child = fork();
-  if (child < 0) { D1("LegaFS fork failed: %s", strerror(errno)); return PAM_ABORT; }
-
-  if (child == 0) {
-     /* if (pam_modutil_sanitize_helper_fds(pamh, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD, PAM_MODUTIL_PIPE_FD) < 0) */
-     /*   _exit(PAM_SESSION_ERR); */
-    D1("Executing: %s %s -o %s", options->ega_fuse_exec, mountpoint, mount_options);
-    execlp(options->ega_fuse_exec, basename((char*)options->ega_fuse_exec), mountpoint, "-o", mount_options, (char*)NULL);
-    /* should not get here: exit with error */
-    D1("LegaFS is not available");
-    _exit(errno);
+  /* Handling umask */
+  D1("Setting umask to %o", options->ega_dir_umask);
+  umask((mode_t)options->ega_dir_umask); /* ignore old mask */
+  
+  if( options->chroot ){
+    D1("Chrooting to %s", homedir);
+    if (chdir(homedir)) { D1("Unable to chdir to %s: %s", homedir, strerror(errno)); return PAM_SESSION_ERR; }
+    if (chroot(homedir)){ D1("Unable to chroot(%s): %s", homedir, strerror(errno)); return PAM_SESSION_ERR; }
+    if (chdir("/")){ D1("Unable to chdir(/) after chroot(%s): %s", homedir, strerror(errno)); return PAM_SESSION_ERR; }
+  } else {
+    D1("Chrooting disabled");
   }
-
-  /* Child > 0 */
-  if(waitpid(child, &rc, 0) < 0) { D1("waitpid failed [%d]: %s", rc, strerror(errno)); return PAM_ABORT; }
-  if (!WIFEXITED(rc) || errno == EINTR) { D1("Error occured while mounting a LegaFS: %s", strerror(errno)); return PAM_SESSION_ERR; }
-
-  sigaction(SIGCHLD, &oldsa, NULL);
-
-  rc = WEXITSTATUS(rc);
-  if(rc) { D1("Unable to mount LegaFS [Exit %d]", rc); return PAM_SESSION_ERR; }
-
-  D1("Chrooting to %s", mountpoint);
-  if (chdir(mountpoint)) { D1("Unable to chdir to %s: %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
-  if (chroot(mountpoint)){ D1("Unable to chroot(%s): %s", mountpoint, strerror(errno)); return PAM_SESSION_ERR; }
 
   D1("Session open: Success");
   return PAM_SUCCESS;
@@ -265,6 +213,86 @@ pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char *argv[]
 PAM_EXTERN int
 pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char *argv[])
 {
-  D1("Account: allowed");
+  D1("Account: Checking cache expiration");
+  int rc;
+  const char *username;
+  int mflags = 0;
+
+  D2("Getting acct PAM module options");
+  pam_options(&mflags, argc, argv);
+
+  if ( (rc = pam_get_user(pamh, &username, NULL)) != PAM_SUCCESS) { D1("EGA: Unknown user: %s", pam_strerror(pamh, rc)); return rc; }
+
+  /* check database */
+  bool use_backend = backend_opened();
+  if(!use_backend){ D1("Backend disabled: Account allowed by default"); return PAM_SUCCESS; }
+
+  if(!backend_has_expired(username)){ D1("Account valid for user '%s' [cached]", username); return PAM_SUCCESS; }
+
+  /* Defining the CentralEGA callback */
+  int cega_callback(char* uname, uid_t uid, char* password_hash, char* pubkey, char* gecos){
+    /* assert same name */
+    if( strcmp(username, uname) ){
+      REPORT("Requested username %s not matching username response %s", username, uname);
+      return PAM_CRED_UNAVAIL;
+    }
+    /* Add to database. Ignore result. */
+    if(use_backend) backend_add_user(username, uid, password_hash, pubkey, gecos);
+    return PAM_SUCCESS;
+  }
+
+  rc = cega_resolve(strjoina(options->cega_endpoint_name, username), cega_callback);
+
+  if(rc == PAM_SUCCESS){ D1("Account valid for user '%s'", username); return PAM_SUCCESS; }
+
+  REPORT("Account expired '%s'", username);
+  return PAM_CRED_EXPIRED;
+}
+
+/*
+ * setcred runs before and after session_open
+ * which means, 'after' is in a chrooted-env, so setcred fails
+ * (but before succeeds)
+ * So a user is refreshed right before an attempts to open a session,
+ * right after a successful authentication
+ */
+PAM_EXTERN int
+pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv)
+{
+  /* D1("Set cred ignored"); */
+  /* return PAM_IGNORE; */
+  D1("Set cred allowed");
   return PAM_SUCCESS;
+}
+
+
+/* Fetch the password hash, from either the database or CentralEGA.
+ * Allocates a string into data. You have to clean it when you're done.
+ */
+static int
+_get_password_hash(const char* username, char** data)
+{
+  int rc = 0;
+
+  D1("Fetching the password hash of %s", username);
+
+  /* check database */
+  bool use_backend = backend_opened();
+  if(use_backend && backend_get_password_hash(username, data)) return rc;
+
+  /* Defining the CentralEGA callback */
+  int _get_pwdh(char* uname, uid_t uid, char* password_hash, char* pubkey, char* gecos){
+    int rc = 1;
+    /* assert same name */
+    if( strcmp(username, uname) ){
+      REPORT("Requested username %s not matching username response %s", username, uname);
+      return rc;
+    }
+    if(password_hash){ *data = strdup(password_hash); rc = 0; /* success */ }
+    else { REPORT("No password hash found for user '%s'", username); }
+    if(use_backend) backend_add_user(username, uid, password_hash, pubkey, gecos); // ignore result
+    return rc;
+  }
+
+  return cega_resolve(strjoina(options->cega_endpoint_name, username), _get_pwdh);
 }
