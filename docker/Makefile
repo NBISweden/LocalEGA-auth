@@ -30,7 +30,7 @@ os:
                      $@
 
 openssh:
-	docker build --build-arg AUTH_BRANCH=cega-ids \
+	docker build --build-arg AUTH_BRANCH=master \
                      --cache-from $(TARGET_PREFIX)-$@:latest \
                      --tag $(TARGET_PREFIX)-$@:$(TAG) \
                      --tag $(TARGET_PREFIX)-$@:latest \
