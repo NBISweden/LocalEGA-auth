@@ -69,9 +69,10 @@ _nss_ega_getpwuid_r(uid_t uid, struct passwd *result,
     return 0;
   }
 
-  _cleanup_str_ char* endpoint = (char*)malloc(sizeof(char) * (strlen(options->cega_endpoint_uid) + 32));
+  _cleanup_str_ char* endpoint = (char*)malloc((options->cega_endpoint_uid_len + 32) * sizeof(char));
   /* Laaaaaaaarge enough! */
-  if( sprintf(endpoint, "%s%u", options->cega_endpoint_uid, ruid) < 0 ){
+  if(!endpoint){ D1("Memory allocation error"); return NSS_STATUS_NOTFOUND; }
+  if( sprintf(endpoint, options->cega_endpoint_uid, ruid) < 0 ){
     D1("Error formatting the endpoint"); return NSS_STATUS_NOTFOUND;
   }
   rc = cega_resolve(endpoint, cega_callback);
@@ -134,7 +135,12 @@ _nss_ega_getpwnam_r(const char *username, struct passwd *result,
     return 0;
   }
 
-  rc = cega_resolve(strjoina(options->cega_endpoint_name, username), cega_callback);
+  _cleanup_str_ char* endpoint = (char*)malloc((options->cega_endpoint_username_len + strlen(username)) * sizeof(char));
+  if(!endpoint){ D1("Memory allocation error"); return NSS_STATUS_NOTFOUND; }
+  if( sprintf(endpoint, options->cega_endpoint_username, username) < 0 ){
+    D1("Error formatting the endpoint"); return NSS_STATUS_NOTFOUND;
+  }
+  rc = cega_resolve(endpoint, cega_callback);
   if( rc == -1 ){ D1("Buffer too small"); *errnop = ERANGE; return NSS_STATUS_TRYAGAIN; }
   if( rc > 0 ) { D1("User %s not found in CentralEGA", username); return NSS_STATUS_NOTFOUND; }
   REPORT("User %s found in CentralEGA", username);

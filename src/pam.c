@@ -241,7 +241,13 @@ pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char *argv[])
     return PAM_SUCCESS;
   }
 
-  rc = cega_resolve(strjoina(options->cega_endpoint_name, username), cega_callback);
+  _cleanup_str_ char* endpoint = (char*)malloc((options->cega_endpoint_username_len + strlen(username)) * sizeof(char));
+  if(!endpoint){ D1("Memory allocation error"); return PAM_SYSTEM_ERR; }
+  if( sprintf(endpoint, options->cega_endpoint_username, username) < 0 ){
+    D1("Error formatting the endpoint"); return PAM_SYSTEM_ERR;
+  }
+
+  rc = cega_resolve(endpoint, cega_callback);
 
   if(rc == PAM_SUCCESS){ D1("Account valid for user '%s'", username); return PAM_SUCCESS; }
 
@@ -294,5 +300,10 @@ _get_password_hash(const char* username, char** data)
     return rc;
   }
 
-  return cega_resolve(strjoina(options->cega_endpoint_name, username), _get_pwdh);
+  _cleanup_str_ char* endpoint = (char*)malloc((options->cega_endpoint_username_len + strlen(username)) * sizeof(char));
+  if(!endpoint){ D1("Memory allocation error"); return 1; }
+  if( sprintf(endpoint, options->cega_endpoint_username, username) < 0 ){
+    D1("Error formatting the endpoint"); return 2;
+  }
+  return cega_resolve(endpoint, _get_pwdh);
 }
