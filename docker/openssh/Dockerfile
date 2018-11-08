@@ -43,7 +43,7 @@ RUN mkdir -p /usr/local/lib/ega && \
 ARG OPENSSH_DIR=/opt/openssh
 ARG SSHD_UID=74
 ARG SSHD_GID=74
-ARG OPENSSH_TAG=V_7_7_P1
+ARG OPENSSH_TAG=V_7_8_P1
 
 RUN getent group ssh_keys >/dev/null || groupadd -r ssh_keys || :
 RUN getent group sshd || groupadd -g ${SSHD_GID} -r sshd
